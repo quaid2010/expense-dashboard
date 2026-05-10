@@ -17,6 +17,20 @@
   }
   body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; min-height: 100vh; }
 
+  /* ── PIN Screen ── */
+  #pin-screen { display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 24px; }
+  .pin-card { background: var(--surface); border: 1px solid var(--border); border-radius: 20px; padding: 52px 44px; max-width: 360px; width: 100%; text-align: center; box-shadow: var(--shadow); }
+  .pin-card h1 { font-size: 24px; font-weight: 700; margin-bottom: 8px; }
+  .pin-card p { color: var(--muted); font-size: 14px; margin-bottom: 32px; }
+  .pin-dots { display: flex; justify-content: center; gap: 14px; margin-bottom: 32px; }
+  .pin-dot { width: 14px; height: 14px; border-radius: 50%; background: var(--border); transition: background 0.15s; }
+  .pin-dot.filled { background: var(--primary); }
+  .pin-dot.error { background: var(--red); }
+  .pin-pad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .pin-btn { background: var(--surface2); border: 1px solid var(--border); border-radius: 14px; padding: 18px; font-size: 22px; font-weight: 600; cursor: pointer; transition: all 0.1s; user-select: none; }
+  .pin-btn:active { background: var(--primary); color: #fff; transform: scale(0.95); }
+  .pin-btn.wide { grid-column: span 2; font-size: 16px; }
+
   /* ── Upload Page ── */
   #upload-page { display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 24px; }
   .upload-card { background: var(--surface); border: 1px solid var(--border); border-radius: 20px; padding: 56px 48px; max-width: 520px; width: 100%; text-align: center; box-shadow: var(--shadow); }
@@ -115,7 +129,34 @@
 <div id="loading">⏳ Parsing your file…</div>
 
 <!-- ── Upload Page ── -->
-<div id="upload-page">
+<div id="pin-screen">
+  <div class="pin-card">
+    <div style="font-size:48px;margin-bottom:16px;">🔒</div>
+    <h1>Family Dashboard</h1>
+    <p>Enter your PIN to access</p>
+    <div class="pin-dots">
+      <div class="pin-dot" id="d0"></div>
+      <div class="pin-dot" id="d1"></div>
+      <div class="pin-dot" id="d2"></div>
+      <div class="pin-dot" id="d3"></div>
+    </div>
+    <div class="pin-pad">
+      <button class="pin-btn" onclick="pinPress('1')">1</button>
+      <button class="pin-btn" onclick="pinPress('2')">2</button>
+      <button class="pin-btn" onclick="pinPress('3')">3</button>
+      <button class="pin-btn" onclick="pinPress('4')">4</button>
+      <button class="pin-btn" onclick="pinPress('5')">5</button>
+      <button class="pin-btn" onclick="pinPress('6')">6</button>
+      <button class="pin-btn" onclick="pinPress('7')">7</button>
+      <button class="pin-btn" onclick="pinPress('8')">8</button>
+      <button class="pin-btn" onclick="pinPress('9')">9</button>
+      <button class="pin-btn wide" onclick="pinClear()">⌫</button>
+      <button class="pin-btn" onclick="pinPress('0')">0</button>
+    </div>
+  </div>
+</div>
+
+<div id="upload-page" style="display:none;">
   <div class="upload-card">
     <div class="upload-icon">📊</div>
     <h1>Expense Dashboard</h1>
@@ -1304,6 +1345,49 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
   });
 });
 
+// ─── PIN logic ────────────────────────────────────────────────────────────
+const CORRECT_PIN = '1030';
+let pinEntry = '';
+
+function pinPress(digit) {
+  if (pinEntry.length >= 4) return;
+  pinEntry += digit;
+  updateDots();
+  if (pinEntry.length === 4) {
+    setTimeout(() => {
+      if (pinEntry === CORRECT_PIN) {
+        sessionStorage.setItem('pin_ok', '1');
+        document.getElementById('pin-screen').style.display = 'none';
+        document.getElementById('upload-page').style.display = 'flex';
+        autoFetch();
+      } else {
+        document.querySelectorAll('.pin-dot').forEach(d => d.classList.add('error'));
+        setTimeout(() => {
+          pinEntry = '';
+          document.querySelectorAll('.pin-dot').forEach(d => { d.classList.remove('filled','error'); });
+        }, 600);
+      }
+    }, 80);
+  }
+}
+
+function pinClear() {
+  pinEntry = pinEntry.slice(0, -1);
+  updateDots();
+}
+
+function updateDots() {
+  for (let i = 0; i < 4; i++) {
+    document.getElementById('d' + i).classList.toggle('filled', i < pinEntry.length);
+  }
+}
+
+// Skip PIN if already verified this session
+if (sessionStorage.getItem('pin_ok') === '1') {
+  document.getElementById('pin-screen').style.display = 'none';
+  document.getElementById('upload-page').style.display = 'flex';
+}
+
 // ─── GitHub Pages auto-fetch ───────────────────────────────────────────────
 const AUTO_FETCH_FILENAME = 'expense.xlsx';
 
@@ -1331,8 +1415,8 @@ async function autoFetch() {
   }
 }
 
-// Try auto-fetch on load; fall back silently to upload UI
-autoFetch();
+// Auto-fetch runs after PIN is verified (called from pinPress or sessionStorage check)
+if (sessionStorage.getItem('pin_ok') === '1') autoFetch();
 </script>
 </body>
 </html>
