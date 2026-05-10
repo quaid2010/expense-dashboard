@@ -1,0 +1,1338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Expense Dashboard 2026</title>
+<script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #f0efed; --surface: #ffffff; --surface2: #f5f4f1; --border: #e5e2db;
+    --primary: #f59e0b; --green: #16a34a; --red: #dc2626; --amber: #f59e0b;
+    --purple: #7c3aed; --cyan: #0891b2;
+    --text: #1c1917; --muted: #78716c; --dimmed: #a8a29e;
+    --radius: 12px; --shadow: 0 2px 20px rgba(0,0,0,0.07);
+  }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; min-height: 100vh; }
+
+  /* ── Upload Page ── */
+  #upload-page { display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 24px; }
+  .upload-card { background: var(--surface); border: 1px solid var(--border); border-radius: 20px; padding: 56px 48px; max-width: 520px; width: 100%; text-align: center; box-shadow: var(--shadow); }
+  .upload-icon { font-size: 56px; margin-bottom: 24px; }
+  .upload-card h1 { font-size: 28px; font-weight: 700; margin-bottom: 8px; }
+  .upload-card p { color: var(--muted); margin-bottom: 32px; line-height: 1.6; }
+  .drop-zone { border: 2px dashed var(--border); border-radius: var(--radius); padding: 40px 24px; cursor: pointer; transition: all 0.2s; position: relative; }
+  .drop-zone:hover, .drop-zone.drag-over { border-color: var(--primary); background: rgba(245,158,11,0.06); }
+  .drop-zone input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+  .drop-zone .dz-icon { font-size: 36px; margin-bottom: 12px; }
+  .drop-zone .dz-text { color: var(--muted); font-size: 15px; }
+  .drop-zone .dz-text strong { color: var(--primary); }
+  .features { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 32px; text-align: left; }
+  .feature { background: var(--surface2); border-radius: 10px; padding: 14px; font-size: 13px; color: var(--muted); display: flex; gap: 10px; align-items: flex-start; }
+  .feature span { font-size: 18px; }
+
+  /* ── Dashboard ── */
+  #dashboard { display: none; }
+  .dash-header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 0 28px; display: flex; align-items: center; gap: 24px; height: 60px; position: sticky; top: 0; z-index: 100; }
+  .dash-header h2 { font-size: 18px; font-weight: 700; }
+  .dash-header .fname { font-size: 13px; color: var(--dimmed); background: var(--surface2); border-radius: 6px; padding: 3px 10px; }
+  .tab-bar { background: var(--surface); border-bottom: 1px solid var(--border); padding: 0 28px; display: flex; gap: 4px; }
+  .tab-btn { padding: 14px 18px; font-size: 14px; font-weight: 500; color: var(--muted); border: none; background: none; cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.15s; }
+  .tab-btn:hover { color: var(--text); }
+  .tab-btn.active { color: var(--primary); border-bottom-color: var(--primary); }
+  .tab-content { display: none; padding: 28px; }
+  .tab-content.active { display: block; }
+
+  /* ── Cards & Layout ── */
+  .metrics-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
+  @media (max-width: 900px) { .metrics-row { grid-template-columns: repeat(2, 1fr); } }
+  .metric-card { background: var(--surface); border: 1px solid var(--border); border-left: 4px solid var(--primary); border-radius: var(--radius); padding: 22px 20px; }
+  .metric-card .label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+  .metric-card .value { font-size: 26px; font-weight: 700; }
+  .metric-card .sub { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .metric-card .badge { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 20px; margin-top: 6px; }
+  .badge.green { background: rgba(16,185,129,0.15); color: var(--green); }
+  .badge.red { background: rgba(239,68,68,0.15); color: var(--red); }
+  .badge.amber { background: rgba(245,158,11,0.15); color: var(--amber); }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; }
+  .card h3 { font-size: 15px; font-weight: 600; margin-bottom: 20px; color: var(--text); }
+  .card-row { display: grid; gap: 20px; margin-bottom: 20px; }
+  .two-col { grid-template-columns: 1fr 1fr; }
+  .three-col { grid-template-columns: 1fr 1fr 1fr; }
+  .chart-3col { grid-template-columns: 1fr 2fr; }
+  @media (max-width: 900px) { .two-col, .three-col, .chart-3col { grid-template-columns: 1fr; } }
+  canvas { max-width: 100%; }
+
+  /* ── Tables ── */
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; padding: 10px 12px; color: var(--muted); font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid var(--border); }
+  td { padding: 10px 12px; border-bottom: 1px solid rgba(0,0,0,0.06); }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: rgba(255,255,255,0.02); }
+  .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .pos { color: var(--green); }
+  .neg { color: var(--red); }
+
+  /* ── Progress bars ── */
+  .progress-bar { background: var(--surface2); border-radius: 4px; height: 6px; overflow: hidden; margin-top: 4px; }
+  .progress-fill { height: 100%; border-radius: 4px; transition: width 0.6s ease; }
+
+  /* ── Month selector ── */
+  .month-selector { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 20px; }
+  .month-btn { padding: 6px 14px; border-radius: 20px; border: 1px solid var(--border); background: none; color: var(--muted); cursor: pointer; font-size: 13px; transition: all 0.15s; }
+  .month-btn:hover { border-color: var(--primary); color: var(--text); }
+  .month-btn.active { background: var(--primary); border-color: var(--primary); color: white; }
+
+  /* ── Investment account pills ── */
+  .inv-pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+  .color-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+
+  /* ── Category list ── */
+  .cat-list { display: flex; flex-direction: column; gap: 10px; }
+  .cat-item { display: flex; align-items: center; gap: 10px; }
+  .cat-item .cat-name { flex: 1; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cat-item .cat-amount { font-size: 13px; font-variant-numeric: tabular-nums; font-weight: 500; min-width: 80px; text-align: right; }
+  .cat-item .cat-pct { font-size: 11px; color: var(--muted); min-width: 36px; text-align: right; }
+
+  /* ── Loading ── */
+  #loading { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); align-items: center; justify-content: center; z-index: 999; font-size: 18px; }
+  #loading.show { display: flex; }
+
+  /* ── Chart container ── */
+  .chart-wrap { position: relative; }
+  .chart-wrap.donut { max-width: 280px; margin: 0 auto; }
+  .chart-wrap.tall { height: 280px; }
+  .chart-wrap.short { height: 200px; }
+
+  /* ── Section heading ── */
+  .section-label { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--dimmed); margin-bottom: 12px; }
+</style>
+</head>
+<body>
+
+<div id="loading">⏳ Parsing your file…</div>
+
+<!-- ── Upload Page ── -->
+<div id="upload-page">
+  <div class="upload-card">
+    <div class="upload-icon">📊</div>
+    <h1>Expense Dashboard</h1>
+    <div id="auto-fetch-status" style="display:none;margin-bottom:24px;">
+      <div style="display:flex;align-items:center;justify-content:center;gap:10px;color:var(--muted);font-size:15px;">
+        <span style="display:inline-block;width:18px;height:18px;border:2px solid var(--primary);border-top-color:transparent;border-radius:50%;animation:spin 0.8s linear infinite;"></span>
+        Loading latest data…
+      </div>
+    </div>
+    <p id="upload-desc">Upload your Excel expense tracker to get a visual breakdown of your spending and investment performance.</p>
+    <div class="drop-zone" id="drop-zone">
+      <input type="file" id="file-input" accept=".xlsx,.xls" />
+      <div class="dz-icon">📁</div>
+      <div class="dz-text"><strong>Click to upload</strong> or drag & drop<br/>Supports .xlsx files</div>
+    </div>
+    <div class="features">
+      <div class="feature"><span>💸</span>Spending by category with budget vs. actual</div>
+      <div class="feature"><span>📈</span>Monthly spending trends over time</div>
+      <div class="feature"><span>💼</span>Investment portfolio performance</div>
+      <div class="feature"><span>🗂️</span>Year-over-year historical comparison</div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Dashboard ── -->
+<div id="dashboard">
+  <div class="dash-header">
+    <h2>📊 Expense Dashboard</h2>
+    <div style="display:flex;align-items:center;gap:12px;">
+      <span class="fname" id="file-name"></span>
+      <span id="auto-load-badge" style="display:none;font-size:12px;background:rgba(22,163,74,0.12);color:var(--green);padding:3px 10px;border-radius:20px;font-weight:600;">● Live</span>
+      <button id="refresh-btn" onclick="autoFetch()" style="display:none;padding:6px 14px;border:1px solid var(--border);border-radius:8px;background:var(--surface2);color:var(--text);font-size:13px;cursor:pointer;font-weight:500;">↻ Refresh</button>
+    </div>
+  </div>
+  <div class="tab-bar">
+    <button class="tab-btn active" data-tab="overview">Overview</button>
+    <button class="tab-btn" data-tab="spending">Spending</button>
+    <button class="tab-btn" data-tab="investments">Investments</button>
+    <button class="tab-btn" data-tab="history">History</button>
+  </div>
+
+  <!-- Overview Tab -->
+  <div class="tab-content active" id="tab-overview">
+    <div class="metrics-row" id="metrics-row"></div>
+    <div class="card-row two-col">
+      <div class="card">
+        <h3>Monthly Spending</h3>
+        <div class="chart-wrap tall"><canvas id="chart-monthly-spending"></canvas></div>
+      </div>
+      <div class="card">
+        <h3>Net Worth Growth</h3>
+        <div class="chart-wrap tall"><canvas id="chart-networth"></canvas></div>
+      </div>
+    </div>
+    <div class="card-row two-col">
+      <div class="card">
+        <h3>YTD Spending by Category</h3>
+        <div style="display:flex;gap:20px;align-items:flex-start;flex-wrap:wrap;">
+          <div class="chart-wrap donut" style="flex-shrink:0"><canvas id="chart-ytd-donut"></canvas></div>
+          <div class="cat-list" id="ytd-cat-list" style="flex:1;min-width:180px;margin-top:8px;"></div>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Investment Portfolio</h3>
+        <div style="display:flex;gap:24px;align-items:flex-start;flex-wrap:wrap;">
+          <div style="flex-shrink:0;display:flex;flex-direction:column;align-items:center;gap:12px;">
+            <div class="chart-wrap donut"><canvas id="chart-inv-overview"></canvas></div>
+            <div id="inv-total-badge" style="text-align:center;"></div>
+          </div>
+          <div style="flex:1;min-width:220px;overflow-x:auto;">
+            <table id="inv-overview-table" style="width:100%;font-size:13px;border-collapse:collapse;">
+              <thead>
+                <tr>
+                  <th style="text-align:left;padding:6px 10px;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--border);">Account</th>
+                  <th style="text-align:right;padding:6px 10px;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--border);">Cost Basis</th>
+                  <th style="text-align:right;padding:6px 10px;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--border);">Added</th>
+                  <th style="text-align:right;padding:6px 10px;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--border);">Gain / Loss</th>
+                  <th style="text-align:right;padding:6px 10px;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--border);">FMV</th>
+                  <th style="text-align:right;padding:6px 10px;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--border);">Return</th>
+                </tr>
+              </thead>
+              <tbody id="inv-overview-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Spending Tab -->
+  <div class="tab-content" id="tab-spending">
+    <div class="month-selector" id="month-selector"></div>
+    <div class="card-row chart-3col">
+      <div class="card">
+        <h3 id="spend-donut-title">Spending by Category</h3>
+        <div class="chart-wrap donut"><canvas id="chart-spend-donut"></canvas></div>
+        <div class="cat-list" id="spend-cat-list" style="margin-top:16px;"></div>
+      </div>
+      <div class="card">
+        <h3 id="spend-bar-title">Budget vs. Actual</h3>
+        <div class="chart-wrap" style="height:420px"><canvas id="chart-budget-bar"></canvas></div>
+      </div>
+    </div>
+    <div class="card">
+      <h3 id="spend-table-title">Category Detail</h3>
+      <table id="spend-table">
+        <thead><tr><th>Category</th><th class="num">Budget</th><th class="num">Actual</th><th class="num">Variance</th><th class="num">% of Budget</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div class="card" style="margin-top:20px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:16px;">
+        <h3 style="margin:0;">Category Year-over-Year</h3>
+        <select id="cat-trend-select" style="padding:7px 12px;border:1px solid var(--border);border-radius:8px;background:var(--surface2);color:var(--text);font-size:14px;cursor:pointer;"></select>
+      </div>
+      <div id="cat-trend-summary" style="display:flex;gap:20px;flex-wrap:wrap;margin-bottom:16px;"></div>
+      <div style="height:300px"><canvas id="chart-cat-trend"></canvas></div>
+    </div>
+  </div>
+
+  <!-- Investments Tab -->
+  <div class="tab-content" id="tab-investments">
+    <div class="metrics-row" id="inv-metrics"></div>
+    <div class="card-row chart-3col">
+      <div class="card">
+        <h3>Portfolio Allocation</h3>
+        <div class="chart-wrap donut"><canvas id="chart-inv-donut"></canvas></div>
+        <div class="cat-list" id="inv-alloc-list" style="margin-top:16px;"></div>
+      </div>
+      <div class="card">
+        <h3>Performance by Account</h3>
+        <table id="inv-table">
+          <thead><tr><th>Account</th><th class="num">Cost Basis</th><th class="num">Added in 2026</th><th class="num">Gain / Loss</th><th class="num">FMV</th><th class="num">Return</th></tr></thead>
+          <tbody></tbody>
+        </table>
+        <div style="margin-top:20px;">
+          <div class="section-label">Monthly Investment Activity</div>
+          <div class="chart-wrap" style="height:180px"><canvas id="chart-inv-monthly"></canvas></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- History Tab -->
+  <div class="tab-content" id="tab-history">
+    <div class="card" style="margin-bottom:20px;">
+      <h3>Net Worth Growth (All Time)</h3>
+      <div class="chart-wrap" style="height:280px"><canvas id="chart-hist-networth"></canvas></div>
+    </div>
+    <div class="card-row two-col">
+      <div class="card">
+        <h3>Annual Spending by Year</h3>
+        <div class="chart-wrap" style="height:280px"><canvas id="chart-hist-annual"></canvas></div>
+      </div>
+      <div class="card">
+        <h3>Top Categories Over Time</h3>
+        <div class="chart-wrap" style="height:280px"><canvas id="chart-hist-cats"></canvas></div>
+      </div>
+    </div>
+
+    <!-- Investment History Section -->
+    <div style="margin-top:24px;">
+      <div style="font-size:17px;font-weight:700;margin-bottom:16px;padding-bottom:10px;border-bottom:2px solid var(--primary);">Investment Performance History</div>
+      <div class="metrics-row" id="inv-hist-metrics" style="grid-template-columns:repeat(3,1fr);"></div>
+      <div class="card-row two-col" style="margin-top:20px;">
+        <div class="card">
+          <h3>Portfolio FMV vs Cost Basis</h3>
+          <div style="height:260px"><canvas id="chart-inv-hist-fmv"></canvas></div>
+        </div>
+        <div class="card">
+          <h3>Annual Gain &amp; Return %</h3>
+          <div style="height:260px"><canvas id="chart-inv-hist-gain"></canvas></div>
+        </div>
+      </div>
+      <div class="card" style="margin-top:20px;">
+        <h3>Portfolio Composition by Year (FMV)</h3>
+        <div style="height:320px"><canvas id="chart-inv-hist-stacked"></canvas></div>
+      </div>
+      <div class="card" style="margin-top:20px;">
+        <h3>Account Performance by Year</h3>
+        <div id="inv-hist-table"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ─── Constants ──────────────────────────────────────────────────────────────
+const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const MONTH_SHEET_NAMES = ['Jan','Feb','Mar','Apr ','Apr','May ','May','Jun ','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+const CAT_COLORS = {
+  'Rent':'#6366f1','Dining':'#f97316','Grocery':'#22c55e','Utilities':'#3b82f6',
+  'Entertainment':'#a855f7','Gas':'#eab308','Car Insurance':'#14b8a6','Clothes':'#ec4899',
+  'Gifts':'#f43f5e','Travel':'#06b6d4','Offering':'#84cc16','Misc':'#8b5cf6',
+  'Parents':'#fb923c','House':'#78716c','Gym':'#10b981','School':'#0ea5e9',
+  'Car':'#d946ef','Cable':'#64748b','Cleaners':'#a3a3a3','Loan':'#b91c1c',
+  'Baby Sitter':'#7c3aed','Baby':'#7c3aed'
+};
+const CAT_COLOR_LIST = Object.values(CAT_COLORS);
+function catColor(name) { return CAT_COLORS[name] || CAT_COLOR_LIST[Math.abs(name.charCodeAt(0)*7) % CAT_COLOR_LIST.length]; }
+
+const INV_COLORS = {
+  'Etrade':'#3b82f6','BC':'#10b981','Roth IRA':'#f59e0b','TSP':'#8b5cf6',
+  'Riley (UTMA)':'#ec4899','401K / Pension':'#06b6d4','Chase/AMEX':'#64748b'
+};
+function invColor(name, idx) {
+  for (const k of Object.keys(INV_COLORS)) { if (name.includes(k) || k.includes(name.split(' ')[0])) return INV_COLORS[k]; }
+  return Object.values(INV_COLORS)[idx % Object.values(INV_COLORS).length];
+}
+
+// ─── Parsing ─────────────────────────────────────────────────────────────────
+function num(v) { const n = parseFloat(v); return isNaN(n) ? 0 : n; }
+function isStr(v) { return v && typeof v === 'string' && v.trim().length > 0; }
+
+function parseMonthlySheet(rows) {
+  const categories = [];
+  const invested = {}, gains = {};
+  let investState = 'none';
+
+  for (let i = 2; i < rows.length; i++) {
+    const row = rows[i] || [];
+    // Budget vs Actual table (cols 24–27)
+    const catName = row[24];
+    if (isStr(catName) && catName !== 'Total' && catName !== 'Category') {
+      categories.push({ name: catName.trim(), budget: num(row[25]), actual: num(row[26]), variance: num(row[27]) });
+    }
+    // Investment activity (cols 29–30)
+    const label = row[29];
+    const val = num(row[30]);
+    if (isStr(label)) {
+      const l = label.trim();
+      if (l === 'Invested Amount for month') { investState = 'invest'; }
+      else if (l === 'Gain/Loss in Investment') { investState = 'gains'; }
+      else if (l === 'Total') { investState = 'none'; }
+      else if (investState === 'invest' && val !== 0) { invested[l] = (invested[l] || 0) + val; }
+      else if (investState === 'gains' && val !== 0) { gains[l] = (gains[l] || 0) + val; }
+    }
+  }
+  return { categories, invested, gains };
+}
+
+function parseSummarySheet(rows) {
+  const monthly = [], investments = [];
+
+  // Dynamically find the header row containing "Month" and "Net"
+  let headerIdx = -1;
+  let colMonth = 1, colNet = 2, colBudget = 3, colActual = 4, colInvEarning = 7;
+  let colInvName = 23, colInvCost = 24, colInvAdded = 25, colInvGain = 26, colInvFMV = 27, colInvPct = 28;
+
+  for (let i = 0; i < Math.min(rows.length, 10); i++) {
+    const row = rows[i] || [];
+    const netColIdx = row.findIndex(c => typeof c === 'string' && c.trim() === 'Net');
+    if (netColIdx >= 0) {
+      headerIdx = i;
+      colNet = netColIdx;
+      const monthColIdx = row.findIndex(c => typeof c === 'string' && c.trim() === 'Month');
+      if (monthColIdx >= 0) colMonth = monthColIdx;
+      const budgetColIdx = row.findIndex(c => typeof c === 'string' && c.trim() === 'Budget');
+      if (budgetColIdx >= 0) colBudget = budgetColIdx;
+      const actualColIdx = row.findIndex(c => typeof c === 'string' && c.trim() === 'Actual');
+      if (actualColIdx >= 0) colActual = actualColIdx;
+      const invColIdx = row.findIndex(c => typeof c === 'string' && c.includes('Earning'));
+      if (invColIdx >= 0) colInvEarning = invColIdx;
+      break;
+    }
+  }
+
+  const dataStart = headerIdx >= 0 ? headerIdx + 1 : 3;
+  const dataEnd = dataStart + 12;
+
+  // Monthly data: 12 rows starting after header
+  for (let i = dataStart; i < Math.min(dataEnd, rows.length); i++) {
+    const row = rows[i] || [];
+    const monthVal = row[colMonth];
+    if (!monthVal) continue;
+    const net = num(row[colNet]);
+    const budget = num(row[colBudget]);
+    const actual = num(row[colActual]);
+    const invEarning = num(row[colInvEarning]);
+    if (net === 0 && budget === 0 && actual === 0) continue;
+    // Derive month index from the date value (handles both Date objects and Excel serials)
+    let mo = -1;
+    if (monthVal instanceof Date) {
+      mo = monthVal.getMonth();
+    } else if (typeof monthVal === 'number' && monthVal > 1000) {
+      // Excel date serial — convert: Excel epoch is Dec 30, 1899
+      const d = new Date((monthVal - 25569) * 86400 * 1000);
+      mo = d.getUTCMonth();
+    } else {
+      const d = new Date(monthVal);
+      if (!isNaN(d)) mo = d.getMonth();
+    }
+    if (mo < 0) continue;
+    monthly.push({ month: mo, label: MONTH_NAMES[mo], net, budget, actual: Math.abs(actual), invEarning });
+  }
+
+  // Investment accounts: same row range, different columns
+  for (let i = dataStart; i < Math.min(dataStart + 10, rows.length); i++) {
+    const row = rows[i] || [];
+    const name = row[colInvName];
+    if (!isStr(name)) continue;
+    const nm = name.trim();
+    if (!nm) continue;
+    investments.push({
+      name: nm,
+      cost: num(row[colInvCost]), added: num(row[colInvAdded]),
+      gain: num(row[colInvGain]), fmv: num(row[colInvFMV]),
+      pctInc: num(row[colInvPct]), pctGained: num(row[colInvPct + 1]),
+      isTotal: nm === 'TOTAL'
+    });
+  }
+
+  // Portfolio total FMV directly from cell AB11 (Excel row 11 = 0-based row 10, col AB = 0-based col 27)
+  const portfolioFMV = num((rows[10] || [])[27]);
+
+  return { monthly, investments, portfolioFMV };
+}
+
+function parseGraphSheet(rows) {
+  const catHistory = {};   // { catName: { 2014: val, 2015: val, ... } }
+  const netHistory = [];   // [{ date, net }]
+  const investByYear = {}; // { 2014: fmv, 2015: fmv, ... } — last non-zero Dec value per year
+  let years = [];
+
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i] || [];
+    // Header row with year labels
+    if (row[8] === 'Category' || (row[9] >= 2010 && row[9] <= 2030)) {
+      years = [];
+      for (let c = 9; c <= 21; c++) { if (row[c] && !isNaN(num(row[c]))) years.push(Math.round(num(row[c]))); }
+      continue;
+    }
+    // Category data rows
+    const catName = row[8];
+    if (isStr(catName) && years.length > 0) {
+      const nm = catName.trim();
+      if (nm && nm !== 'Category') {
+        catHistory[nm] = catHistory[nm] || {};
+        for (let c = 9; c <= 9 + years.length - 1; c++) {
+          const yr = years[c - 9];
+          if (yr) catHistory[nm][yr] = (catHistory[nm][yr] || 0) + num(row[c]);
+        }
+      }
+    }
+    // Monthly rows: col 0 = date, col 1 = net worth, col 4 = investment FMV
+    const d = row[0], n = num(row[1]), inv = num(row[4]);
+    if (d) {
+      const dt = (d instanceof Date) ? d : new Date(d);
+      if (!isNaN(dt.getTime())) {
+        if (n > 0) netHistory.push({ date: dt, net: n });
+        // Track last non-zero investment value per year
+        if (inv > 0) investByYear[dt.getFullYear()] = inv;
+      }
+    }
+  }
+  return { catHistory, netHistory, years, investByYear };
+}
+
+function parseInvestmentSheet(ws) {
+  if (!ws) return { years: [] };
+  const ref = ws['!ref'];
+  if (!ref) return { years: [] };
+  const range = XLSX.utils.decode_range(ref);
+  const cv = (c, r) => { const a = XLSX.utils.encode_cell({r, c}); return ws[a] ? ws[a].v : null; };
+  const toNum = v => (v != null && v !== '' && !isNaN(parseFloat(v))) ? parseFloat(v) : 0;
+
+  const yearBlocks = {};
+  let currentYear = null;
+
+  for (let r = range.s.r; r <= range.e.r; r++) {
+    const colB = cv(1, r);  // column B = account name or blank
+    const colC = cv(2, r);  // column C = year number or cost basis
+
+    // Year header row: col B blank, col C is a year 2020–2035
+    if ((colB == null || colB === '') && colC != null && typeof colC === 'number' && colC >= 2010 && colC <= 2035) {
+      currentYear = Math.round(colC);
+      if (!yearBlocks[currentYear]) yearBlocks[currentYear] = { accounts: [], total: null };
+      continue;
+    }
+    if (currentYear === null) continue;
+    const name = colB != null ? String(colB).trim() : null;
+    if (!name) continue;
+
+    const entry = {
+      name,
+      cost:      toNum(colC),
+      added:     toNum(cv(3, r)),
+      gain:      toNum(cv(4, r)),
+      fmv:       toNum(cv(5, r)),
+      pctInc:    toNum(cv(6, r)),
+      pctGained: toNum(cv(7, r))
+    };
+    if (name === 'TOTAL') yearBlocks[currentYear].total = entry;
+    else yearBlocks[currentYear].accounts.push(entry);
+  }
+
+  return {
+    years: Object.entries(yearBlocks)
+      .map(([yr, d]) => ({ year: parseInt(yr), ...d }))
+      .sort((a, b) => a.year - b.year)
+  };
+}
+
+function parseWorkbook(wb) {
+  const months = {};
+  wb.SheetNames.forEach(sn => {
+    const trimmed = sn.trim();
+    if (MONTH_NAMES.includes(trimmed)) {
+      const rows = XLSX.utils.sheet_to_json(wb.Sheets[sn], { header: 1, defval: null });
+      months[trimmed] = parseMonthlySheet(rows);
+    }
+  });
+  const summarySheet = wb.Sheets['Summary'];
+  const summaryRows = summarySheet ? XLSX.utils.sheet_to_json(summarySheet, { header: 1, defval: null }) : [];
+  const graphRows = wb.Sheets['Graph'] ? XLSX.utils.sheet_to_json(wb.Sheets['Graph'], { header: 1, defval: null }) : [];
+  const summary = parseSummarySheet(summaryRows);
+
+  // Parse investment table directly from X3:AE11 using exact cell addresses
+  if (summarySheet) {
+    const cell = addr => summarySheet[addr] ? num(summarySheet[addr].v) : 0;
+    const cellStr = addr => summarySheet[addr] ? String(summarySheet[addr].v).trim() : '';
+    const ACCT_ROWS = ['4','5','6','7','8','9','10'];
+    summary.investments = ACCT_ROWS
+      .map(r => ({
+        name:      cellStr('X' + r),
+        cost:      cell('Y' + r),
+        added:     cell('Z' + r),
+        gain:      cell('AA' + r),
+        fmv:       cell('AB' + r),
+        pctInc:    cell('AC' + r),
+        pctGained: cell('AD' + r),
+        isTotal:   false
+      }))
+      .filter(a => a.name);
+    summary.investments.push({
+      name: 'TOTAL', isTotal: true,
+      cost:      cell('Y11'), added:     cell('Z11'),
+      gain:      cell('AA11'), fmv:      cell('AB11'),
+      pctInc:    cell('AC11'), pctGained: cell('AD11')
+    });
+    summary.portfolioFMV = cell('AB11');
+  }
+
+  const investData = parseInvestmentSheet(wb.Sheets['Investment']);
+  return { months, summary, history: parseGraphSheet(graphRows), invest: investData };
+}
+
+// ─── Formatting ───────────────────────────────────────────────────────────────
+function fmt$(n) { return '$' + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 }); }
+function fmtPct(n) { return (n * 100).toFixed(1) + '%'; }
+function fmtSign$(n) { return (n >= 0 ? '+' : '-') + '$' + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 }); }
+
+// ─── Chart helpers ────────────────────────────────────────────────────────────
+let charts = {};
+function destroyChart(id) { if (charts[id]) { charts[id].destroy(); delete charts[id]; } }
+
+function makeDonut(id, labels, values, colors) {
+  destroyChart(id);
+  const ctx = document.getElementById(id).getContext('2d');
+  charts[id] = new Chart(ctx, {
+    type: 'doughnut',
+    data: { labels, datasets: [{ data: values, backgroundColor: colors, borderWidth: 2, borderColor: '#ffffff' }] },
+    options: { responsive: true, cutout: '68%', plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => ` ${c.label}: ${fmt$(c.raw)} (${(c.parsed / c.dataset.data.reduce((a,b)=>a+b,0)*100).toFixed(1)}%)` } } } }
+  });
+}
+
+function makeHorizBar(id, labels, budgets, actuals, colors) {
+  destroyChart(id);
+  const ctx = document.getElementById(id).getContext('2d');
+  charts[id] = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        { label: 'Actual', data: actuals, backgroundColor: colors.map(c=>c+'cc'), borderRadius: 4 },
+        { label: 'Budget', data: budgets, backgroundColor: 'rgba(0,0,0,0.06)', borderRadius: 4, borderColor: 'rgba(0,0,0,0.12)', borderWidth: 1 }
+      ]
+    },
+    options: {
+      indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { labels: { color: '#78716c', font: { size: 12 } } }, tooltip: { callbacks: { label: c => ` ${c.dataset.label}: ${fmt$(c.raw)}` } } },
+      scales: {
+        x: { ticks: { color: '#a8a29e', callback: v => fmt$(v) }, grid: { color: 'rgba(0,0,0,0.06)' } },
+        y: { ticks: { color: '#78716c', font: { size: 11 } }, grid: { display: false } }
+      }
+    }
+  });
+}
+
+function makeLineBar(id, labels, barData, lineData, barLabel, lineLabel) {
+  destroyChart(id);
+  const ctx = document.getElementById(id).getContext('2d');
+  charts[id] = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        { type: 'bar', label: barLabel, data: barData, backgroundColor: 'rgba(245,158,11,0.7)', borderRadius: 6 },
+        ...(lineData ? [{ type: 'line', label: lineLabel, data: lineData, borderColor: '#f59e0b', backgroundColor: 'transparent', borderWidth: 2, pointRadius: 3, pointBackgroundColor: '#f59e0b', tension: 0.3 }] : [])
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { labels: { color: '#78716c', font: { size: 12 } } }, tooltip: { callbacks: { label: c => ` ${c.dataset.label}: ${fmt$(c.raw)}` } } },
+      scales: {
+        x: { ticks: { color: '#a8a29e' }, grid: { color: 'rgba(0,0,0,0.05)' } },
+        y: { ticks: { color: '#a8a29e', callback: v => fmt$(v) }, grid: { color: 'rgba(0,0,0,0.05)' } }
+      }
+    }
+  });
+}
+
+function makeLine(id, datasets, labels) {
+  destroyChart(id);
+  const ctx = document.getElementById(id).getContext('2d');
+  charts[id] = new Chart(ctx, {
+    type: 'line',
+    data: { labels, datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { labels: { color: '#78716c', font: { size: 12 } } }, tooltip: { callbacks: { label: c => ` ${c.dataset.label}: ${fmt$(c.raw)}` } } },
+      scales: {
+        x: { ticks: { color: '#a8a29e', maxTicksLimit: 12 }, grid: { color: 'rgba(0,0,0,0.05)' } },
+        y: { ticks: { color: '#a8a29e', callback: v => fmt$(v) }, grid: { color: 'rgba(0,0,0,0.05)' } }
+      }
+    }
+  });
+}
+
+// ─── Rendering ────────────────────────────────────────────────────────────────
+let appData = null;
+let activeMonth = 'YTD';
+
+function getYTDCategories(months) {
+  const merged = {};
+  Object.values(months).forEach(m => {
+    m.categories.forEach(c => {
+      if (!merged[c.name]) merged[c.name] = { name: c.name, budget: 0, actual: 0, variance: 0 };
+      merged[c.name].budget += c.budget;
+      merged[c.name].actual += c.actual;
+      merged[c.name].variance += c.variance;
+    });
+  });
+  return Object.values(merged).filter(c => c.actual !== 0 || c.budget !== 0);
+}
+
+function renderMetrics(data) {
+  const { summary, months } = data;
+  const latestNetMonth = [...summary.monthly].reverse().find(m => m.net > 0);
+  const latestNet = latestNetMonth ? latestNetMonth.net : 0;
+  const latestNetLabel = latestNetMonth ? latestNetMonth.label : '—';
+  const ytdSpend = summary.monthly.reduce((s, m) => s + m.actual, 0);
+  const ytdBudget = summary.monthly.reduce((s, m) => s + m.budget, 0);
+  const invTotal = summary.investments.find(i => i.isTotal);
+  const invFMV = summary.portfolioFMV || (invTotal ? invTotal.fmv : 0);
+  const invGain = invTotal ? invTotal.gain : 0;
+  const variance = ytdBudget - ytdSpend;
+
+  document.getElementById('metrics-row').innerHTML = `
+    <div class="metric-card">
+      <div class="label">Net Worth</div>
+      <div class="value">${fmt$(latestNet)}</div>
+      <div class="sub">As of ${latestNetLabel} 2026</div>
+    </div>
+    <div class="metric-card">
+      <div class="label">YTD Spending</div>
+      <div class="value">${fmt$(ytdSpend)}</div>
+      <div class="badge ${variance >= 0 ? 'green' : 'red'}">${variance >= 0 ? '▼' : '▲'} ${fmt$(Math.abs(variance))} vs budget</div>
+    </div>
+    <div class="metric-card">
+      <div class="label">YTD Budget</div>
+      <div class="value">${fmt$(ytdBudget)}</div>
+      <div class="sub">${summary.monthly.length} months tracked</div>
+    </div>
+    <div class="metric-card">
+      <div class="label">Portfolio Value</div>
+      <div class="value">${fmt$(invFMV)}</div>
+      <div class="badge ${invGain >= 0 ? 'green' : 'red'}">${invGain >= 0 ? '▲' : '▼'} ${fmt$(Math.abs(invGain))} gain</div>
+    </div>`;
+}
+
+function renderOverview(data) {
+  const { summary, history } = data;
+  // Monthly spending bar
+  const labels = summary.monthly.map(m => m.label);
+  const spends = summary.monthly.map(m => m.actual);
+  const budgets = summary.monthly.map(m => m.budget);
+  makeLineBar('chart-monthly-spending', labels, spends, budgets, 'Actual Spending', 'Budget');
+
+  // Net worth line (recent 36 months from graph)
+  const nw = history.netHistory.slice(-36);
+  makeLine('chart-networth', [{
+    label: 'Net Worth', data: nw.map(p => p.net),
+    borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,0.08)',
+    fill: true, tension: 0.3, pointRadius: 0
+  }], nw.map(p => p.date.toLocaleDateString('en-US', { month: 'short', year: '2-digit' })));
+
+  // YTD category donut
+  const ytdCats = getYTDCategories(data.months).filter(c => Math.abs(c.actual) > 0)
+    .sort((a,b) => Math.abs(b.actual) - Math.abs(a.actual));
+  const total = ytdCats.reduce((s,c) => s + Math.abs(c.actual), 0);
+  makeDonut('chart-ytd-donut', ytdCats.map(c=>c.name), ytdCats.map(c=>Math.abs(c.actual)), ytdCats.map(c=>catColor(c.name)));
+  const list = document.getElementById('ytd-cat-list');
+  list.innerHTML = ytdCats.map(c => `
+    <div class="cat-item">
+      <div class="color-dot" style="background:${catColor(c.name)}"></div>
+      <div class="cat-name">${c.name}</div>
+      <div class="cat-amount">${fmt$(Math.abs(c.actual))}</div>
+      <div class="cat-pct">${((Math.abs(c.actual)/total)*100).toFixed(0)}%</div>
+    </div>`).join('') + `
+    <div class="cat-item" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);font-weight:600;">
+      <div class="color-dot" style="background:transparent"></div>
+      <div class="cat-name">Total</div>
+      <div class="cat-amount">${fmt$(total)}</div>
+      <div class="cat-pct">100%</div>
+    </div>`;
+
+  // Investment portfolio donut + table
+  const invAccounts = summary.investments.filter(i => !i.isTotal && i.fmv > 0);
+  const invTotalRow = summary.investments.find(i => i.isTotal);
+  const invTotalFMV = summary.portfolioFMV || (invTotalRow ? invTotalRow.fmv : 0);
+
+  makeDonut('chart-inv-overview',
+    invAccounts.map(i => i.name),
+    invAccounts.map(i => i.fmv),
+    invAccounts.map((i, idx) => invColor(i.name, idx))
+  );
+
+  // Total badge under donut
+  document.getElementById('inv-total-badge').innerHTML = `
+    <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;">Total FMV</div>
+    <div style="font-size:20px;font-weight:700;">${fmt$(invTotalFMV)}</div>
+    <div style="font-size:12px;color:var(--green);">▲ ${fmt$(invTotalRow ? invTotalRow.gain : 0)} gain</div>`;
+
+  // Account table
+  const tbody = document.getElementById('inv-overview-tbody');
+  const rowStyle = 'border-bottom:1px solid rgba(0,0,0,0.06)';
+  const td = (content, right = false, style = '') =>
+    `<td style="padding:8px 10px;${right ? 'text-align:right;font-variant-numeric:tabular-nums;' : ''}${style}">${content}</td>`;
+
+  tbody.innerHTML = invAccounts.map((inv, idx) => {
+    const color = invColor(inv.name, idx);
+    const gainCls = inv.gain >= 0 ? 'var(--green)' : 'var(--red)';
+    const pct = (inv.pctInc * 100).toFixed(2) + '%';
+    return `<tr style="${rowStyle}">
+      ${td(`<span style="display:inline-flex;align-items:center;gap:8px;"><span style="width:8px;height:8px;border-radius:50%;background:${color};display:inline-block;flex-shrink:0;"></span>${inv.name}</span>`)}
+      ${td(fmt$(inv.cost), true)}
+      ${td(inv.added ? fmt$(inv.added) : '—', true, 'color:var(--muted)')}
+      ${td(`<span style="color:${gainCls}">${inv.gain ? fmtSign$(inv.gain) : '—'}</span>`, true)}
+      ${td(`<strong>${fmt$(inv.fmv)}</strong>`, true)}
+      ${td(`<span style="background:${inv.pctInc>=0?'rgba(16,185,129,0.15)':'rgba(239,68,68,0.15)'};color:${inv.pctInc>=0?'var(--green)':'var(--red)'};padding:2px 8px;border-radius:20px;font-size:12px;font-weight:600;">${pct}</span>`, true)}
+    </tr>`;
+  }).join('') + (invTotalRow ? `
+    <tr style="font-weight:700;border-top:2px solid var(--border);">
+      ${td('TOTAL')}
+      ${td(fmt$(invTotalRow.cost), true)}
+      ${td(fmt$(invTotalRow.added), true)}
+      ${td(`<span style="color:var(--green)">${fmtSign$(invTotalRow.gain)}</span>`, true)}
+      ${td(`<strong>${fmt$(invTotalFMV)}</strong>`, true)}
+      ${td(`<span style="background:rgba(16,185,129,0.15);color:var(--green);padding:2px 8px;border-radius:20px;font-size:12px;font-weight:600;">${(invTotalRow.pctInc*100).toFixed(2)}%</span>`, true)}
+    </tr>` : '');
+}
+
+function renderSpending(data, selectedMonth) {
+  const { months } = data;
+  // Month selector
+  const availMonths = Object.keys(months).filter(m => {
+    const md = months[m];
+    return md.categories.some(c => c.actual !== 0);
+  });
+  const sel = document.getElementById('month-selector');
+  sel.innerHTML = ['YTD', ...availMonths].map(m =>
+    `<button class="month-btn ${m === selectedMonth ? 'active' : ''}" data-month="${m}">${m}</button>`
+  ).join('');
+  sel.querySelectorAll('.month-btn').forEach(btn => btn.addEventListener('click', () => {
+    activeMonth = btn.dataset.month;
+    renderSpending(data, activeMonth);
+  }));
+
+  let cats;
+  if (selectedMonth === 'YTD') {
+    cats = getYTDCategories(months);
+    document.getElementById('spend-donut-title').textContent = 'YTD Spending by Category';
+    document.getElementById('spend-bar-title').textContent = 'YTD Budget vs. Actual';
+    document.getElementById('spend-table-title').textContent = 'YTD Category Detail';
+  } else {
+    cats = months[selectedMonth]?.categories || [];
+    document.getElementById('spend-donut-title').textContent = `${selectedMonth} – Spending by Category`;
+    document.getElementById('spend-bar-title').textContent = `${selectedMonth} – Budget vs. Actual`;
+    document.getElementById('spend-table-title').textContent = `${selectedMonth} – Category Detail`;
+  }
+  cats = cats.filter(c => Math.abs(c.actual) > 0 || c.budget > 0).sort((a,b) => Math.abs(b.actual)-Math.abs(a.actual));
+
+  // Donut
+  const spendCats = cats.filter(c => Math.abs(c.actual) > 0);
+  const spendTotal = spendCats.reduce((s,c) => s + Math.abs(c.actual), 0);
+  makeDonut('chart-spend-donut', spendCats.map(c=>c.name), spendCats.map(c=>Math.abs(c.actual)), spendCats.map(c=>catColor(c.name)));
+  document.getElementById('spend-cat-list').innerHTML = spendCats.slice(0,8).map(c => `
+    <div class="cat-item">
+      <div class="color-dot" style="background:${catColor(c.name)}"></div>
+      <div class="cat-name">${c.name}</div>
+      <div class="cat-amount">${fmt$(Math.abs(c.actual))}</div>
+      <div class="cat-pct">${spendTotal ? ((Math.abs(c.actual)/spendTotal)*100).toFixed(0)+'%' : ''}</div>
+    </div>`).join('');
+
+  // Totals for bar chart and table
+  const totalBudget  = cats.reduce((s,c) => s + c.budget, 0);
+  const totalActual  = cats.reduce((s,c) => s + Math.abs(c.actual), 0);
+  const totalVariance = totalBudget - totalActual;
+
+  // Horizontal bar — append Total row with dark accent color
+  makeHorizBar(
+    'chart-budget-bar',
+    [...cats.map(c=>c.name), 'TOTAL'],
+    [...cats.map(c=>c.budget), totalBudget],
+    [...cats.map(c=>Math.abs(c.actual)), totalActual],
+    [...cats.map(c=>catColor(c.name)), '#1c1917']
+  );
+
+  renderCategoryTrend(data, null);
+
+  // Table
+  const tbody = document.querySelector('#spend-table tbody');
+  tbody.innerHTML = cats.map(c => {
+    const actual = Math.abs(c.actual);
+    const v = c.variance;
+    const pct = c.budget ? (actual / c.budget * 100).toFixed(0) : '–';
+    return `<tr>
+      <td><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${catColor(c.name)};margin-right:8px;"></span>${c.name}</td>
+      <td class="num">${fmt$(c.budget)}</td>
+      <td class="num">${fmt$(actual)}</td>
+      <td class="num ${v >= 0 ? 'pos' : 'neg'}">${fmtSign$(v)}</td>
+      <td class="num">${pct}%</td>
+    </tr>`;
+  }).join('') + `
+    <tr style="font-weight:700;border-top:2px solid var(--border);background:var(--surface2);">
+      <td><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#1c1917;margin-right:8px;"></span>Total</td>
+      <td class="num">${fmt$(totalBudget)}</td>
+      <td class="num">${fmt$(totalActual)}</td>
+      <td class="num ${totalVariance >= 0 ? 'pos' : 'neg'}">${fmtSign$(totalVariance)}</td>
+      <td class="num">${totalBudget ? (totalActual/totalBudget*100).toFixed(0) : '–'}%</td>
+    </tr>`;
+}
+
+function renderCategoryTrend(data, category) {
+  const catHistory = data.history?.catHistory || {};
+  const TOTAL_KEY = '__total__';
+  // Exclude junk entries like "Sum of 2014" and the built-in "Total" key
+  const cats = Object.keys(catHistory)
+    .filter(c => c !== 'Total' && !/^sum of/i.test(c))
+    .sort();
+  const sel = document.getElementById('cat-trend-select');
+
+  // Populate dropdown with Total Spending first, then categories
+  const expectedLen = cats.length + 1;
+  if (sel.options.length !== expectedLen) {
+    sel.innerHTML = `<option value="${TOTAL_KEY}">— Total Spending —</option>` +
+      cats.map(c => `<option value="${c}">${c}</option>`).join('');
+  }
+  const activeCat = category || sel.value || TOTAL_KEY;
+  sel.value = activeCat;
+
+  // Wire change event (idempotent — replaces any existing listener via clone)
+  const fresh = sel.cloneNode(true);
+  sel.parentNode.replaceChild(fresh, sel);
+  fresh.value = activeCat;
+  fresh.addEventListener('change', () => renderCategoryTrend(data, fresh.value));
+
+  // Build year→value map: sum all categories for Total, else single category
+  let yearMap;
+  if (activeCat === TOTAL_KEY) {
+    yearMap = {};
+    Object.entries(catHistory).forEach(([cat, vals]) => {
+      if (cat === 'Total' || /^sum of/i.test(cat)) return;
+      Object.entries(vals).forEach(([yr, v]) => {
+        yearMap[yr] = (yearMap[yr] || 0) + v;
+      });
+    });
+  } else {
+    yearMap = catHistory[activeCat] || {};
+  }
+  const years = Object.keys(yearMap).map(Number).sort((a,b)=>a-b).filter(y => y >= 2014);
+  const values = years.map(y => yearMap[y] || 0);
+
+  // Summary chips: avg, max year, YoY last
+  const avg = values.length ? values.reduce((s,v)=>s+v,0)/values.length : 0;
+  const maxVal = Math.max(...values);
+  const maxYr = years[values.indexOf(maxVal)];
+  const lastYoY = values.length >= 2 ? values[values.length-1] - values[values.length-2] : null;
+  const summaryEl = document.getElementById('cat-trend-summary');
+  summaryEl.innerHTML = [
+    `<div style="background:var(--surface2);border-radius:8px;padding:8px 14px;font-size:13px;"><span style="color:var(--muted)">Avg/yr</span> <strong>${fmt$(avg)}</strong></div>`,
+    `<div style="background:var(--surface2);border-radius:8px;padding:8px 14px;font-size:13px;"><span style="color:var(--muted)">Peak</span> <strong>${fmt$(maxVal)}</strong> <span style="color:var(--muted)">(${maxYr})</span></div>`,
+    lastYoY != null ? `<div style="background:var(--surface2);border-radius:8px;padding:8px 14px;font-size:13px;"><span style="color:var(--muted)">Last YoY</span> <strong style="color:${lastYoY>=0?'var(--red)':'var(--green)'}">${fmtSign$(lastYoY)}</strong></div>` : ''
+  ].join('');
+
+  // Bar chart with YoY % change labels
+  destroyChart('chart-cat-trend');
+  const ctx = document.getElementById('chart-cat-trend');
+  if (!ctx || years.length === 0) return;
+  const yoyPct = values.map((v,i) => i === 0 ? null : values[i-1] ? +((v - values[i-1]) / values[i-1] * 100).toFixed(1) : null);
+
+  charts['chart-cat-trend'] = new Chart(ctx.getContext('2d'), {
+    type: 'bar',
+    data: {
+      labels: years.map(String),
+      datasets: [
+        {
+          label: activeCat,
+          data: values,
+          backgroundColor: years.map((_,i) => {
+            if (i === 0) return 'rgba(245,158,11,0.75)';
+            return values[i] > values[i-1] ? 'rgba(220,38,38,0.75)' : 'rgba(22,163,74,0.75)';
+          }),
+          borderRadius: 6
+        },
+        {
+          label: 'YoY Change %',
+          data: yoyPct,
+          type: 'line',
+          borderColor: '#6366f1',
+          backgroundColor: 'transparent',
+          tension: 0.4,
+          pointRadius: 5,
+          pointBackgroundColor: '#6366f1',
+          yAxisID: 'y2'
+        }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { labels: { color: '#1c1917', font: { size: 12 }, usePointStyle: true } },
+        tooltip: {
+          callbacks: {
+            label: ctx => ctx.datasetIndex === 0
+              ? ` ${fmt$(ctx.parsed.y)}`
+              : ctx.parsed.y != null ? ` ${ctx.parsed.y > 0 ? '+' : ''}${ctx.parsed.y}%` : ''
+          }
+        }
+      },
+      scales: {
+        x: { ticks: { color: '#78716c', font: { size: 13 } }, grid: { display: false } },
+        y: { ticks: { color: '#78716c', callback: v => fmt$(v) }, grid: { color: 'rgba(0,0,0,0.06)' } },
+        y2: { position: 'right', ticks: { color: '#6366f1', callback: v => v + '%' }, grid: { display: false } }
+      }
+    }
+  });
+}
+
+function renderInvestments(data) {
+  const { summary } = data;
+  const invs = summary.investments;
+  const total = invs.find(i => i.isTotal) || { cost: 0, added: 0, gain: 0, fmv: 0, pctInc: 0 };
+  const accounts = invs.filter(i => !i.isTotal);
+  const portfolioFMV = data.summary.portfolioFMV || total.fmv;
+
+  document.getElementById('inv-metrics').innerHTML = `
+    <div class="metric-card">
+      <div class="label">Total Portfolio (FMV)</div>
+      <div class="value">${fmt$(portfolioFMV)}</div>
+      <div class="sub">Fair market value</div>
+    </div>
+    <div class="metric-card">
+      <div class="label">Total Cost Basis</div>
+      <div class="value">${fmt$(total.cost)}</div>
+      <div class="sub">Amount invested</div>
+    </div>
+    <div class="metric-card">
+      <div class="label">Added in 2026</div>
+      <div class="value">${fmt$(total.added)}</div>
+      <div class="sub">New contributions</div>
+    </div>
+    <div class="metric-card">
+      <div class="label">Total Gain / Loss</div>
+      <div class="value ${total.gain >= 0 ? 'pos' : 'neg'}">${fmtSign$(total.gain)}</div>
+      <div class="badge ${total.pctInc >= 0 ? 'green' : 'red'}">${(total.pctInc*100).toFixed(2)}% total return</div>
+    </div>`;
+
+  // Donut
+  const accs = accounts.filter(i => i.fmv > 0);
+  const invFMVTotal = accs.reduce((s,i) => s+i.fmv, 0);
+  makeDonut('chart-inv-donut', accs.map(i=>i.name), accs.map(i=>i.fmv), accs.map((i,idx)=>invColor(i.name,idx)));
+  document.getElementById('inv-alloc-list').innerHTML = accs.map((inv,idx) => `
+    <div class="cat-item">
+      <div class="color-dot" style="background:${invColor(inv.name,idx)}"></div>
+      <div class="cat-name">${inv.name}</div>
+      <div class="cat-amount">${fmt$(inv.fmv)}</div>
+      <div class="cat-pct">${((inv.fmv/invFMVTotal)*100).toFixed(0)}%</div>
+    </div>`).join('');
+
+  // Performance table
+  document.querySelector('#inv-table tbody').innerHTML = accounts.map((inv, idx) => {
+    const gainPct = inv.pctInc;
+    return `<tr>
+      <td><span style="display:inline-flex;align-items:center;gap:8px;"><span class="color-dot" style="background:${invColor(inv.name,idx)}"></span>${inv.name}</span></td>
+      <td class="num">${fmt$(inv.cost)}</td>
+      <td class="num">${inv.added ? fmt$(inv.added) : '–'}</td>
+      <td class="num ${inv.gain >= 0 ? 'pos' : 'neg'}">${inv.gain ? fmtSign$(inv.gain) : '–'}</td>
+      <td class="num">${fmt$(inv.fmv)}</td>
+      <td class="num"><span class="badge ${gainPct >= 0 ? 'green' : 'red'}">${(gainPct*100).toFixed(2)}%</span></td>
+    </tr>`;
+  }).join('');
+
+  // Monthly investment activity from monthly sheets
+  const invMonths = [], invAmounts = [];
+  MONTH_NAMES.forEach(mn => {
+    if (data.months[mn]) {
+      const total = Object.values(data.months[mn].invested).reduce((s,v)=>s+v,0);
+      if (total > 0) { invMonths.push(mn); invAmounts.push(total); }
+    }
+  });
+  if (invMonths.length > 0) {
+    makeLineBar('chart-inv-monthly', invMonths, invAmounts, null, 'Invested', null);
+  }
+}
+
+function renderInvestmentHistory(invest, investByYear) {
+  if (!invest || !invest.years || invest.years.length === 0) return;
+  const { years } = invest;
+  const COLORS = ['#f59e0b','#3b82f6','#16a34a','#dc2626','#8b5cf6','#0891b2','#ea580c','#db2777','#65a30d','#0f766e'];
+
+  const iby = investByYear || {};
+  // Build a detail lookup by year
+  const detailMap = {};
+  years.forEach(y => { detailMap[y.year] = y; });
+  // Full year list from 2016 → latest year in either source
+  const allYears = [...new Set([
+    ...Object.keys(iby).map(Number).filter(y => y >= 2016),
+    ...years.map(y => y.year)
+  ])].sort((a, b) => a - b);
+
+  // ── Metric cards: all years, full detail where available else FMV only ──
+  const metricsEl = document.getElementById('inv-hist-metrics');
+  if (metricsEl) {
+    metricsEl.innerHTML = allYears.map(yr => {
+      const dy = detailMap[yr];
+      if (dy) {
+        const t = dy.total || {};
+        const gainColor = t.gain >= 0 ? 'var(--green)' : 'var(--red)';
+        return `<div class="metric-card">
+          <div class="metric-label">${yr}</div>
+          <div class="metric-value">${fmt$(t.fmv || 0)}</div>
+          <div style="font-size:13px;margin-top:4px;color:${gainColor}">Gain: ${fmtSign$(t.gain || 0)} (${((t.pctGained||0)*100).toFixed(1)}%)</div>
+        </div>`;
+      }
+      const fmv = iby[yr] || 0;
+      const prevFmv = iby[yr - 1] || 0;
+      const approxGain = prevFmv ? fmv - prevFmv : 0;
+      const gainColor = approxGain >= 0 ? 'var(--green)' : 'var(--red)';
+      return `<div class="metric-card" style="opacity:0.85">
+        <div class="metric-label">${yr}</div>
+        <div class="metric-value">${fmt$(fmv)}</div>
+        <div style="font-size:13px;margin-top:4px;color:${gainColor}">~${fmtSign$(approxGain)} (est.)</div>
+      </div>`;
+    }).join('');
+  }
+
+  // ── FMV vs Cost Basis line: all years ──
+  const fmvData = allYears.map(y => detailMap[y] ? (detailMap[y].total?.fmv || null) : (iby[y] || null));
+  const costData = allYears.map(y => detailMap[y] ? (detailMap[y].total?.cost || null) : null);
+  destroyChart('chart-inv-hist-fmv');
+  const ctxFmv = document.getElementById('chart-inv-hist-fmv');
+  if (ctxFmv) {
+    charts['chart-inv-hist-fmv'] = new Chart(ctxFmv.getContext('2d'), {
+      type: 'line',
+      data: {
+        labels: allYears.map(String),
+        datasets: [
+          { label: 'Portfolio FMV', data: fmvData, borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,0.12)', fill: true, tension: 0.4, pointRadius: 5, pointBackgroundColor: '#f59e0b', spanGaps: true },
+          { label: 'Cost Basis', data: costData, borderColor: '#6b7280', backgroundColor: 'transparent', borderDash: [5,4], tension: 0.4, pointRadius: 5, pointBackgroundColor: '#6b7280', spanGaps: false }
+        ]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { labels: { color: '#1c1917', font: { size: 12 } } }, tooltip: { callbacks: { label: ctx => ctx.parsed.y != null ? ' ' + fmt$(ctx.parsed.y) : '' } } },
+        scales: { x: { ticks: { color: '#78716c' }, grid: { display: false } }, y: { ticks: { color: '#78716c', callback: v => fmt$(v) }, grid: { color: 'rgba(0,0,0,0.06)' } } }
+      }
+    });
+  }
+
+  // ── Annual Gain & Return: all years (estimated for pre-detail years) ──
+  const gainData = allYears.map(yr => {
+    const dy = detailMap[yr];
+    if (dy) return dy.total ? dy.total.gain : 0;
+    const prev = iby[yr - 1]; const cur = iby[yr];
+    return (prev && cur) ? cur - prev : 0;
+  });
+  const pctData = allYears.map(yr => {
+    const dy = detailMap[yr];
+    if (dy) return dy.total ? +(dy.total.pctGained * 100).toFixed(2) : 0;
+    const prev = iby[yr - 1]; const cur = iby[yr];
+    return (prev && cur) ? +((cur - prev) / prev * 100).toFixed(2) : 0;
+  });
+  destroyChart('chart-inv-hist-gain');
+  const ctxGain = document.getElementById('chart-inv-hist-gain');
+  if (ctxGain) {
+    charts['chart-inv-hist-gain'] = new Chart(ctxGain.getContext('2d'), {
+      type: 'bar',
+      data: {
+        labels: allYears.map(String),
+        datasets: [
+          { label: 'Gain ($)', data: gainData, backgroundColor: gainData.map(v => v >= 0 ? 'rgba(22,163,74,0.75)' : 'rgba(220,38,38,0.75)'), yAxisID: 'y' },
+          { label: 'Return (%)', data: pctData, type: 'line', borderColor: '#f59e0b', backgroundColor: 'transparent', tension: 0.4, pointRadius: 5, pointBackgroundColor: '#f59e0b', yAxisID: 'y2' }
+        ]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { labels: { color: '#1c1917', font: { size: 12 } } }, tooltip: { callbacks: { label: ctx => ctx.datasetIndex === 0 ? ' ' + fmt$(ctx.parsed.y) : (ctx.parsed.y != null ? ' ' + ctx.parsed.y.toFixed(1) + '%' : '') } } },
+        scales: {
+          x: { ticks: { color: '#78716c' }, grid: { display: false } },
+          y: { ticks: { color: '#78716c', callback: v => fmt$(v) }, grid: { color: 'rgba(0,0,0,0.06)' } },
+          y2: { position: 'right', ticks: { color: '#f59e0b', callback: v => v + '%' }, grid: { display: false } }
+        }
+      }
+    });
+  }
+
+  // ── Stacked composition: all years; pre-detail years show single "Portfolio" bar ──
+  const allAccounts = [...new Set(years.flatMap(y => y.accounts.map(a => a.name)))];
+  const stackDatasets = [
+    // One dataset per account (null for years without account detail)
+    ...allAccounts.map((acct, i) => ({
+      label: acct,
+      data: allYears.map(yr => {
+        const dy = detailMap[yr];
+        if (!dy) return null;
+        const a = dy.accounts.find(a => a.name === acct);
+        return a ? a.fmv : 0;
+      }),
+      backgroundColor: COLORS[i % COLORS.length],
+      stack: 'main'
+    })),
+    // Historical total for years without account detail
+    {
+      label: 'Portfolio (est.)',
+      data: allYears.map(yr => detailMap[yr] ? null : (iby[yr] || null)),
+      backgroundColor: 'rgba(156,163,175,0.6)',
+      stack: 'main'
+    }
+  ];
+  destroyChart('chart-inv-hist-stacked');
+  const ctxStack = document.getElementById('chart-inv-hist-stacked');
+  if (ctxStack) {
+    charts['chart-inv-hist-stacked'] = new Chart(ctxStack.getContext('2d'), {
+      type: 'bar',
+      data: { labels: allYears.map(String), datasets: stackDatasets },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { position: 'bottom', labels: { color: '#1c1917', font: { size: 13 }, padding: 16, usePointStyle: true, pointStyleWidth: 12 } },
+          tooltip: { callbacks: { label: ctx => ctx.parsed.y ? ' ' + ctx.dataset.label + ': ' + fmt$(ctx.parsed.y) : '' } }
+        },
+        scales: {
+          x: { stacked: true, ticks: { color: '#78716c', font: { size: 13 } }, grid: { display: false } },
+          y: { stacked: true, ticks: { color: '#78716c', callback: v => fmt$(v) }, grid: { color: 'rgba(0,0,0,0.06)' } }
+        }
+      }
+    });
+  }
+
+  // ── Account Performance table: all years; pre-detail years show FMV total only ──
+  const tableEl = document.getElementById('inv-hist-table');
+  if (tableEl) {
+    const allAccts = [...new Set(years.flatMap(y => y.accounts.map(a => a.name)))];
+    const headerCols = allYears.map(yr => {
+      const isDetail = !!detailMap[yr];
+      return `<th style="text-align:right;padding:8px 12px;${isDetail ? '' : 'color:var(--muted)'}">
+        ${yr}<br><span style="font-size:11px;color:var(--muted);font-weight:400;">${isDetail ? 'FMV / Gain' : 'FMV (est.)'}</span>
+      </th>`;
+    }).join('');
+    const rows = allAccts.map(acct => {
+      const cells = allYears.map(yr => {
+        const dy = detailMap[yr];
+        if (!dy) return `<td style="text-align:right;padding:8px 12px;color:var(--dimmed)">—</td>`;
+        const a = dy.accounts.find(a => a.name === acct);
+        if (!a) return `<td style="text-align:right;padding:8px 12px;color:var(--dimmed)">—</td>`;
+        const gainColor = a.gain >= 0 ? 'var(--green)' : 'var(--red)';
+        return `<td style="text-align:right;padding:8px 12px;">${fmt$(a.fmv)}<br><span style="font-size:11px;color:${gainColor}">${fmtSign$(a.gain)}</span></td>`;
+      }).join('');
+      return `<tr style="border-bottom:1px solid var(--border)"><td style="padding:8px 12px;font-weight:600">${acct}</td>${cells}</tr>`;
+    }).join('');
+    const totalCells = allYears.map(yr => {
+      const dy = detailMap[yr];
+      if (dy && dy.total) {
+        const t = dy.total;
+        const gainColor = t.gain >= 0 ? 'var(--green)' : 'var(--red)';
+        return `<td style="text-align:right;padding:8px 12px;font-weight:700">${fmt$(t.fmv)}<br><span style="font-size:11px;color:${gainColor}">${fmtSign$(t.gain)}</span></td>`;
+      }
+      const fmv = iby[yr];
+      return fmv ? `<td style="text-align:right;padding:8px 12px;font-weight:700;color:var(--muted)">${fmt$(fmv)}</td>`
+                 : `<td style="text-align:right;padding:8px 12px;color:var(--dimmed)">—</td>`;
+    }).join('');
+    tableEl.innerHTML = `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
+      <thead><tr style="background:var(--surface2);border-bottom:2px solid var(--border)"><th style="text-align:left;padding:8px 12px">Account</th>${headerCols}</tr></thead>
+      <tbody>${rows}<tr style="background:var(--surface2)"><td style="padding:8px 12px;font-weight:700">TOTAL</td>${totalCells}</tr></tbody>
+    </table></div>`;
+  }
+}
+
+function renderHistory(data) {
+  const { history } = data;
+  // Full net worth history line
+  const nw = history.netHistory;
+  makeLine('chart-hist-networth', [{
+    label: 'Net Worth', data: nw.map(p=>p.net),
+    borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,0.08)',
+    fill: true, tension: 0.3, pointRadius: 0
+  }], nw.map(p => p.date.toLocaleDateString('en-US', { month: 'short', year: '2-digit' })));
+
+  // Annual total spending by year
+  const totalByYear = {};
+  if (history.catHistory['Total']) {
+    Object.entries(history.catHistory['Total']).forEach(([yr, val]) => { totalByYear[yr] = val; });
+  } else {
+    Object.values(history.catHistory).forEach(yearMap => {
+      if (!yearMap) return;
+      Object.entries(yearMap).forEach(([yr, val]) => { totalByYear[yr] = (totalByYear[yr]||0) + val; });
+    });
+  }
+  const years = Object.keys(totalByYear).sort().filter(y => parseInt(y) >= 2014);
+  makeLineBar('chart-hist-annual', years, years.map(y=>totalByYear[y]), null, 'Total Spending', null);
+
+  // Top categories over time
+  const topCats = Object.entries(history.catHistory)
+    .filter(([nm]) => nm !== 'Total')
+    .map(([nm, vals]) => ({ nm, total: Object.values(vals).reduce((s,v)=>s+v,0) }))
+    .sort((a,b)=>b.total-a.total).slice(0,5).map(x=>x.nm);
+
+  const COLORS = ['#6366f1','#f97316','#22c55e','#3b82f6','#a855f7'];
+  const datasets = topCats.map((cat,i) => ({
+    label: cat, data: years.map(y => history.catHistory[cat]?.[y] || 0),
+    borderColor: COLORS[i], backgroundColor: 'transparent', tension: 0.3, borderWidth: 2, pointRadius: 2
+  }));
+  makeLine('chart-hist-cats', datasets, years);
+
+  renderInvestmentHistory(data.invest, data.history.investByYear);
+}
+
+function renderDashboard(data) {
+  renderMetrics(data);
+  renderOverview(data);
+  renderSpending(data, 'YTD');
+  renderInvestments(data);
+  renderHistory(data);
+}
+
+// ─── File handling ────────────────────────────────────────────────────────────
+function handleFile(file) {
+  if (!file) return;
+  document.getElementById('loading').classList.add('show');
+  document.getElementById('file-name').textContent = file.name;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array', cellDates: true });
+      appData = parseWorkbook(wb);
+      document.getElementById('upload-page').style.display = 'none';
+      document.getElementById('dashboard').style.display = 'block';
+      renderDashboard(appData);
+    } catch(err) {
+      alert('Error parsing file: ' + err.message);
+      console.error(err);
+    } finally {
+      document.getElementById('loading').classList.remove('show');
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+// ─── Event listeners ──────────────────────────────────────────────────────────
+document.getElementById('file-input').addEventListener('change', e => handleFile(e.target.files[0]));
+
+const dz = document.getElementById('drop-zone');
+dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag-over'); });
+dz.addEventListener('dragleave', () => dz.classList.remove('drag-over'));
+dz.addEventListener('drop', e => { e.preventDefault(); dz.classList.remove('drag-over'); handleFile(e.dataTransfer.files[0]); });
+
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+  });
+});
+
+// ─── GitHub Pages auto-fetch ───────────────────────────────────────────────
+const AUTO_FETCH_FILENAME = 'expense.xlsx';
+
+async function autoFetch() {
+  const statusEl = document.getElementById('auto-fetch-status');
+  const descEl   = document.getElementById('upload-desc');
+  try {
+    statusEl.style.display = 'block';
+    if (descEl) descEl.style.display = 'none';
+    const resp = await fetch('./' + AUTO_FETCH_FILENAME + '?t=' + Date.now());
+    if (!resp.ok) throw new Error('not found');
+    const buf = await resp.arrayBuffer();
+    const wb = XLSX.read(new Uint8Array(buf), { type: 'array', cellDates: true });
+    appData = parseWorkbook(wb);
+    document.getElementById('upload-page').style.display = 'none';
+    document.getElementById('dashboard').style.display = 'block';
+    document.getElementById('file-name').textContent = AUTO_FETCH_FILENAME;
+    document.getElementById('auto-load-badge').style.display = 'inline';
+    document.getElementById('refresh-btn').style.display = 'inline';
+    renderDashboard(appData);
+  } catch (e) {
+    // Not on GitHub Pages or file not present — show normal upload UI
+    statusEl.style.display = 'none';
+    if (descEl) descEl.style.display = 'block';
+  }
+}
+
+// Try auto-fetch on load; fall back silently to upload UI
+autoFetch();
+</script>
+</body>
+</html>
