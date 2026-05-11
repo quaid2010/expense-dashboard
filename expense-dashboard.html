@@ -189,6 +189,8 @@
       <span class="fname" id="file-name"></span>
       <span id="auto-load-badge" style="display:none;font-size:12px;background:rgba(22,163,74,0.12);color:var(--green);padding:3px 10px;border-radius:20px;font-weight:600;">● Live</span>
       <button id="refresh-btn" onclick="autoFetch()" style="display:none;padding:6px 14px;border:1px solid var(--border);border-radius:8px;background:var(--surface2);color:var(--text);font-size:13px;cursor:pointer;font-weight:500;">↻ Refresh</button>
+      <button id="update-btn" onclick="document.getElementById('update-file-input').click()" style="padding:6px 14px;border:none;border-radius:8px;background:var(--primary);color:#fff;font-size:13px;cursor:pointer;font-weight:600;">↑ Update Data</button>
+      <input type="file" id="update-file-input" accept=".xlsx,.xls" style="display:none;" onchange="uploadToGitHub(this.files[0])"/>
     </div>
   </div>
   <div class="tab-bar">
@@ -1344,6 +1346,70 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
   });
 });
+
+// ─── GitHub upload ────────────────────────────────────────────────────────
+const GH_REPO  = 'quaid2010/expense-dashboard';
+const GH_FILE  = 'expense.xlsx';
+
+async function uploadToGitHub(file) {
+  if (!file) return;
+  const btn = document.getElementById('update-btn');
+
+  let token = localStorage.getItem('gh_token');
+  if (!token) {
+    token = prompt('Paste your GitHub Personal Access Token:\n(You only need to do this once)');
+    if (!token) return;
+    localStorage.setItem('gh_token', token.trim());
+    token = token.trim();
+  }
+
+  btn.textContent = '⏳ Uploading…';
+  btn.disabled = true;
+
+  try {
+    // Read file → base64
+    const buf = await file.arrayBuffer();
+    const bytes = new Uint8Array(buf);
+    let binary = '';
+    bytes.forEach(b => binary += String.fromCharCode(b));
+    const base64 = btoa(binary);
+
+    // Get current file SHA (needed to overwrite)
+    const headers = { 'Authorization': 'token ' + token, 'Content-Type': 'application/json' };
+    let sha;
+    const getResp = await fetch(`https://api.github.com/repos/${GH_REPO}/contents/${GH_FILE}`, { headers });
+    if (getResp.ok) { sha = (await getResp.json()).sha; }
+    else if (getResp.status === 401) {
+      localStorage.removeItem('gh_token');
+      alert('Token invalid or expired. Please try again.');
+      btn.textContent = '↑ Update Data'; btn.disabled = false; return;
+    }
+
+    // Upload
+    const body = { message: 'Update expense data ' + new Date().toLocaleDateString(), content: base64, sha };
+    const putResp = await fetch(`https://api.github.com/repos/${GH_REPO}/contents/${GH_FILE}`, {
+      method: 'PUT', headers, body: JSON.stringify(body)
+    });
+
+    if (putResp.ok) {
+      btn.textContent = '✓ Uploaded!';
+      btn.style.background = 'var(--green)';
+      // Reload data from GitHub after a short delay (Pages needs ~30s to rebuild)
+      setTimeout(() => { btn.textContent = '↑ Update Data'; btn.style.background = ''; btn.disabled = false; }, 3000);
+      // Also load the new file locally right now so you see it immediately
+      handleFile(file);
+    } else {
+      const err = await putResp.json();
+      alert('Upload failed: ' + (err.message || putResp.status));
+      btn.textContent = '↑ Update Data'; btn.disabled = false;
+    }
+  } catch(e) {
+    alert('Error: ' + e.message);
+    btn.textContent = '↑ Update Data'; btn.disabled = false;
+  }
+  // Reset file input so same file can be picked again
+  document.getElementById('update-file-input').value = '';
+}
 
 // ─── PIN logic ────────────────────────────────────────────────────────────
 const CORRECT_PIN = '1030';
