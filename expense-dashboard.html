@@ -200,6 +200,15 @@
     <button class="tab-btn" data-tab="history">History</button>
   </div>
 
+  <!-- Budget Warning Banner -->
+  <div id="budget-warning" style="display:none;margin:16px 24px 0;padding:14px 20px;background:#fef2f2;border:1px solid #fecaca;border-radius:12px;align-items:flex-start;gap:14px;">
+    <div style="flex:1">
+      <div style="font-weight:700;color:#dc2626;font-size:15px;margin-bottom:4px;" id="warning-title"></div>
+      <div style="font-size:13px;color:#b91c1c;line-height:1.7;" id="warning-detail"></div>
+    </div>
+    <button onclick="document.getElementById('budget-warning').style.display='none'" style="background:none;border:none;font-size:18px;cursor:pointer;color:#dc2626;padding:4px;flex-shrink:0;">✕</button>
+  </div>
+
   <!-- Overview Tab -->
   <div class="tab-content active" id="tab-overview">
     <div class="metrics-row" id="metrics-row"></div>
@@ -717,6 +726,40 @@ function renderMetrics(data) {
   const invFMV = summary.portfolioFMV || (invTotal ? invTotal.fmv : 0);
   const invGain = invTotal ? invTotal.gain : 0;
   const variance = ytdBudget - ytdSpend;
+
+  // ── Budget warning banner ──
+  const warningEl = document.getElementById('budget-warning');
+  const warnings = [];
+
+  // Condition 1: latest month actual > budget
+  const spentMonths = summary.monthly.filter(m => m.actual > 0);
+  const latestMonth = spentMonths[spentMonths.length - 1];
+  if (latestMonth && latestMonth.actual > latestMonth.budget && latestMonth.budget > 0) {
+    const over = latestMonth.actual - latestMonth.budget;
+    warnings.push(`<strong>${latestMonth.label}:</strong> Spent ${fmt$(latestMonth.actual)} vs ${fmt$(latestMonth.budget)} budget — ${fmt$(over)} over.`);
+  }
+
+  // Condition 2: projected full-year spending > annual budget
+  if (spentMonths.length > 0 && ytdBudget > 0) {
+    const avgMonthlySpend = ytdSpend / spentMonths.length;
+    const totalMonths = 12;
+    const remainingMonths = totalMonths - spentMonths.length;
+    const projectedTotal = ytdSpend + (avgMonthlySpend * remainingMonths);
+    // Annual budget = ytdBudget scaled to full year
+    const annualBudget = (ytdBudget / spentMonths.length) * totalMonths;
+    if (projectedTotal > annualBudget) {
+      const projOver = projectedTotal - annualBudget;
+      warnings.push(`<strong>Full-year projection:</strong> On pace to spend ${fmt$(Math.round(projectedTotal))} vs ${fmt$(Math.round(annualBudget))} annual budget — ${fmt$(Math.round(projOver))} over.`);
+    }
+  }
+
+  if (warnings.length > 0) {
+    document.getElementById('warning-title').innerHTML = '⚠️ &nbsp;Spending Alert';
+    document.getElementById('warning-detail').innerHTML = warnings.join('<br/>');
+    warningEl.style.display = 'flex';
+  } else {
+    warningEl.style.display = 'none';
+  }
 
   document.getElementById('metrics-row').innerHTML = `
     <div class="metric-card">
