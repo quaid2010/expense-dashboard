@@ -304,7 +304,7 @@
           <tbody></tbody>
         </table>
         <div style="margin-top:20px;">
-          <div class="section-label">Monthly Investment Activity</div>
+          <div class="section-label">Monthly Portfolio % Growth</div>
           <div class="chart-wrap" style="height:180px"><canvas id="chart-inv-monthly"></canvas></div>
         </div>
       </div>
@@ -489,8 +489,9 @@ function parseSummarySheet(rows) {
 
 function parseGraphSheet(rows) {
   const catHistory = {};   // { catName: { 2014: val, 2015: val, ... } }
-  const netHistory = [];   // [{ date, net }]
-  const investByYear = {}; // { 2014: fmv, 2015: fmv, ... } — last non-zero Dec value per year
+  const netHistory = [];    // [{ date, net }]
+  const investHistory = []; // [{ date, inv }] — monthly investment FMV
+  const investByYear = {};  // { 2014: fmv, 2015: fmv, ... } — last non-zero Dec value per year
   let years = [];
 
   for (let i = 0; i < rows.length; i++) {
@@ -519,12 +520,11 @@ function parseGraphSheet(rows) {
       const dt = (d instanceof Date) ? d : new Date(d);
       if (!isNaN(dt.getTime())) {
         if (n > 0) netHistory.push({ date: dt, net: n });
-        // Track last non-zero investment value per year
-        if (inv > 0) investByYear[dt.getFullYear()] = inv;
+        if (inv > 0) { investHistory.push({ date: dt, inv }); investByYear[dt.getFullYear()] = inv; }
       }
     }
   }
-  return { catHistory, netHistory, years, investByYear };
+  return { catHistory, netHistory, investHistory, years, investByYear };
 }
 
 function parseInvestmentSheet(ws) {
@@ -1094,8 +1094,8 @@ function renderInvestments(data) {
       <div class="cat-pct">${((inv.fmv/invFMVTotal)*100).toFixed(0)}%</div>
     </div>`).join('');
 
-  // Performance table
-  document.querySelector('#inv-table tbody').innerHTML = accounts.map((inv, idx) => {
+  // Performance table with total row
+  const accountRows = accounts.map((inv, idx) => {
     const gainPct = inv.pctInc;
     return `<tr>
       <td><span style="display:inline-flex;align-items:center;gap:8px;"><span class="color-dot" style="background:${invColor(inv.name,idx)}"></span>${inv.name}</span></td>
@@ -1106,17 +1106,63 @@ function renderInvestments(data) {
       <td class="num"><span class="badge ${gainPct >= 0 ? 'green' : 'red'}">${(gainPct*100).toFixed(2)}%</span></td>
     </tr>`;
   }).join('');
+  const totalGainPct = total.pctInc;
+  const totalRow = `<tr style="background:var(--surface2);border-top:2px solid var(--border);font-weight:700;">
+    <td style="padding:10px 12px;letter-spacing:0.03em;">TOTAL</td>
+    <td class="num" style="padding:10px 12px;">${fmt$(total.cost)}</td>
+    <td class="num" style="padding:10px 12px;">${total.added ? fmt$(total.added) : '–'}</td>
+    <td class="num ${total.gain >= 0 ? 'pos' : 'neg'}" style="padding:10px 12px;">${total.gain ? fmtSign$(total.gain) : '–'}</td>
+    <td class="num" style="padding:10px 12px;">${fmt$(total.fmv)}</td>
+    <td class="num" style="padding:10px 12px;"><span class="badge ${totalGainPct >= 0 ? 'green' : 'red'}">${(totalGainPct*100).toFixed(2)}%</span></td>
+  </tr>`;
+  document.querySelector('#inv-table tbody').innerHTML = accountRows + totalRow;
 
-  // Monthly investment activity from monthly sheets
-  const invMonths = [], invAmounts = [];
-  MONTH_NAMES.forEach(mn => {
-    if (data.months[mn]) {
-      const total = Object.values(data.months[mn].invested).reduce((s,v)=>s+v,0);
-      if (total > 0) { invMonths.push(mn); invAmounts.push(total); }
+  // Monthly % growth chart from Graph sheet investment FMV history
+  const curYear = new Date().getFullYear();
+  const invHist = (data.history?.investHistory || []).filter(e => e.date.getFullYear() === curYear);
+  destroyChart('chart-inv-monthly');
+  if (invHist.length >= 2) {
+    const mLabels = invHist.map(e => e.date.toLocaleString('default', { month: 'short' }));
+    const mGrowth = invHist.map((e, i) => {
+      if (i === 0) return null;
+      const prev = invHist[i-1].inv;
+      return prev > 0 ? +((e.inv - prev) / prev * 100).toFixed(2) : null;
+    });
+    const ctx = document.getElementById('chart-inv-monthly');
+    if (ctx) {
+      charts['chart-inv-monthly'] = new Chart(ctx.getContext('2d'), {
+        type: 'line',
+        data: {
+          labels: mLabels,
+          datasets: [{
+            label: 'Portfolio % Growth MoM',
+            data: mGrowth,
+            borderColor: '#f59e0b',
+            backgroundColor: mGrowth.map(v => v === null ? 'transparent' : v >= 0 ? 'rgba(22,163,74,0.15)' : 'rgba(220,38,38,0.15)'),
+            pointBackgroundColor: mGrowth.map(v => v === null ? 'transparent' : v >= 0 ? '#16a34a' : '#dc2626'),
+            pointRadius: 5,
+            tension: 0.3,
+            fill: false,
+            spanGaps: false
+          }]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: {
+            legend: { labels: { color: '#1c1917', font: { size: 12 } } },
+            tooltip: { callbacks: { label: c => c.parsed.y != null ? ` ${c.parsed.y > 0 ? '+' : ''}${c.parsed.y}%` : '' } }
+          },
+          scales: {
+            x: { ticks: { color: '#78716c', font: { size: 12 } }, grid: { display: false } },
+            y: {
+              ticks: { color: '#78716c', callback: v => (v > 0 ? '+' : '') + v + '%' },
+              grid: { color: 'rgba(0,0,0,0.06)' },
+              afterDataLimits: axis => { axis.max = Math.max(Math.abs(axis.min), Math.abs(axis.max)) * 1.2; axis.min = -axis.max; }
+            }
+          }
+        }
+      });
     }
-  });
-  if (invMonths.length > 0) {
-    makeLineBar('chart-inv-monthly', invMonths, invAmounts, null, 'Invested', null);
   }
 }
 
