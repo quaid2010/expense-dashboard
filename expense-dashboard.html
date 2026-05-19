@@ -1013,9 +1013,9 @@ function renderCategoryTrend(data, category) {
         {
           label: activeCat,
           data: values,
-          backgroundColor: years.map((_,i) => {
-            if (i === 0) return 'rgba(120,113,108,0.5)';
-            return values[i] > values[i-1] ? 'rgba(220,38,38,0.75)' : 'rgba(22,163,74,0.75)';
+          backgroundColor: values.map((v,i) => {
+            const ref = i === 0 ? values[1] : values[i-1];
+            return v > ref ? 'rgba(220,38,38,0.75)' : 'rgba(22,163,74,0.75)';
           }),
           borderRadius: 6
         },
