@@ -272,9 +272,12 @@
       </div>
     </div>
     <div class="card">
-      <h3 id="spend-table-title">Category Detail</h3>
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:16px;">
+        <h3 id="spend-table-title" style="margin:0;">Category Detail</h3>
+        <select id="spend-year-select" style="padding:7px 12px;border:1px solid var(--border);border-radius:8px;background:var(--surface2);color:var(--text);font-size:14px;cursor:pointer;"></select>
+      </div>
       <table id="spend-table">
-        <thead><tr><th>Category</th><th class="num">Budget</th><th class="num">Actual</th><th class="num">Variance</th><th class="num">% of Budget</th></tr></thead>
+        <thead id="spend-table-head"><tr><th>Category</th><th class="num">Budget</th><th class="num">Actual</th><th class="num">Variance</th><th class="num">% of Budget</th></tr></thead>
         <tbody></tbody>
       </table>
     </div>
@@ -610,6 +613,33 @@ function parseWorkbook(wb) {
       pctInc:    cell('AC11'), pctGained: cell('AD11')
     });
     summary.portfolioFMV = cell('AB11');
+
+    // Parse historical yearly budgets directly from col D–G starting row 19
+    // Col D = category name, Col E = budget, Col F = actual, Col G = variance
+    const histBudgets = {};
+    const cv = (col, r) => { const a = col + r; return summarySheet[a] ? summarySheet[a].v : null; };
+    let curYear = null;
+    for (let r = 19; r <= 400; r++) {
+      const dVal = cv('D', r);
+      const eVal = cv('E', r);
+      // Year header: D is empty/null and E is a year number
+      if ((dVal == null || dVal === '') && eVal != null && typeof eVal === 'number' && eVal >= 2014 && eVal <= 2030) {
+        curYear = Math.round(eVal);
+        if (!histBudgets[curYear]) histBudgets[curYear] = {};
+        continue;
+      }
+      // Skip column header rows
+      if (dVal === 'Category') continue;
+      // Data row: D = category name, E = budget, F = actual
+      if (curYear && dVal && typeof dVal === 'string' && dVal.trim() && dVal.trim() !== 'Total' && dVal.trim() !== 'TOTAL') {
+        const budget = Math.abs(num(eVal));
+        const actual = Math.abs(num(cv('F', r)));
+        if (budget > 0 || actual > 0) {
+          histBudgets[curYear][dVal.trim()] = { budget, actual, variance: budget - actual };
+        }
+      }
+    }
+    summary.histBudgets = histBudgets;
   }
 
   const investData = parseInvestmentSheet(wb.Sheets['Investment']);
@@ -866,35 +896,78 @@ function renderOverview(data) {
     </tr>` : '');
 }
 
+let activeSpendYear = 'YTD';
+
 function renderSpending(data, selectedMonth) {
   const { months } = data;
+  const catHistory = data.history?.catHistory || {};
+
   // Month selector
-  const availMonths = Object.keys(months).filter(m => {
-    const md = months[m];
-    return md.categories.some(c => c.actual !== 0);
-  });
+  const availMonths = Object.keys(months).filter(m => months[m].categories.some(c => c.actual !== 0));
   const sel = document.getElementById('month-selector');
   sel.innerHTML = ['YTD', ...availMonths].map(m =>
     `<button class="month-btn ${m === selectedMonth ? 'active' : ''}" data-month="${m}">${m}</button>`
   ).join('');
   sel.querySelectorAll('.month-btn').forEach(btn => btn.addEventListener('click', () => {
     activeMonth = btn.dataset.month;
+    activeSpendYear = 'YTD';
     renderSpending(data, activeMonth);
   }));
 
+  // Year dropdown — gather historical years from catHistory
+  const histYears = [...new Set(
+    Object.values(catHistory).flatMap(ym => Object.keys(ym).map(Number))
+  )].filter(y => y >= 2014).sort((a,b) => b - a);
+  const yrSel = document.getElementById('spend-year-select');
+  const curYear = new Date().getFullYear();
+  yrSel.innerHTML = [
+    `<option value="YTD">Current Year (YTD)</option>`,
+    ...histYears.filter(y => y < curYear).map(y => `<option value="${y}">${y}</option>`)
+  ].join('');
+  yrSel.value = activeSpendYear;
+  yrSel.onchange = () => {
+    activeSpendYear = yrSel.value;
+    renderSpending(data, selectedMonth);
+  };
+
+  // Determine if we're in historical year mode
+  const isHistYear = activeSpendYear !== 'YTD';
+  const histBudgets = data.summary?.histBudgets || {};
+
   let cats;
-  if (selectedMonth === 'YTD') {
-    cats = getYTDCategories(months);
-    document.getElementById('spend-donut-title').textContent = 'YTD Spending by Category';
-    document.getElementById('spend-bar-title').textContent = 'YTD Budget vs. Actual';
-    document.getElementById('spend-table-title').textContent = 'YTD Category Detail';
+  if (isHistYear) {
+    const yr = parseInt(activeSpendYear);
+    const junkPat = /^(total|sum of)/i;
+    const budgetMap = histBudgets[yr] || {};
+    // Merge catHistory actuals with Summary budget data for the year
+    const allCatNames = new Set([
+      ...Object.keys(catHistory).filter(n => !junkPat.test(n)),
+      ...Object.keys(budgetMap)
+    ]);
+    cats = [...allCatNames].map(name => {
+      const actual = catHistory[name]?.[yr] || budgetMap[name]?.actual || 0;
+      const budget = budgetMap[name]?.budget || 0;
+      const variance = budget - actual;
+      return { name, actual, budget, variance };
+    }).filter(c => c.actual > 0 || c.budget > 0)
+      .sort((a,b) => b.actual - a.actual);
+    document.getElementById('spend-donut-title').textContent = `${yr} Spending by Category`;
+    document.getElementById('spend-bar-title').textContent = `${yr} Budget vs. Actual`;
+    document.getElementById('spend-table-title').textContent = `${yr} Category Detail`;
   } else {
-    cats = months[selectedMonth]?.categories || [];
-    document.getElementById('spend-donut-title').textContent = `${selectedMonth} – Spending by Category`;
-    document.getElementById('spend-bar-title').textContent = `${selectedMonth} – Budget vs. Actual`;
-    document.getElementById('spend-table-title').textContent = `${selectedMonth} – Category Detail`;
+    if (selectedMonth === 'YTD') {
+      cats = getYTDCategories(months);
+      document.getElementById('spend-donut-title').textContent = 'YTD Spending by Category';
+      document.getElementById('spend-bar-title').textContent = 'YTD Budget vs. Actual';
+      document.getElementById('spend-table-title').textContent = 'YTD Category Detail';
+    } else {
+      cats = months[selectedMonth]?.categories || [];
+      document.getElementById('spend-donut-title').textContent = `${selectedMonth} – Spending by Category`;
+      document.getElementById('spend-bar-title').textContent = `${selectedMonth} – Budget vs. Actual`;
+      document.getElementById('spend-table-title').textContent = `${selectedMonth} – Category Detail`;
+    }
+    cats = cats.filter(c => Math.abs(c.actual) > 0 || c.budget > 0).sort((a,b) => Math.abs(b.actual)-Math.abs(a.actual));
   }
-  cats = cats.filter(c => Math.abs(c.actual) > 0 || c.budget > 0).sort((a,b) => Math.abs(b.actual)-Math.abs(a.actual));
 
   // Donut
   const spendCats = cats.filter(c => Math.abs(c.actual) > 0);
@@ -908,14 +981,12 @@ function renderSpending(data, selectedMonth) {
       <div class="cat-pct">${spendTotal ? ((Math.abs(c.actual)/spendTotal)*100).toFixed(0)+'%' : ''}</div>
     </div>`).join('');
 
-  // Totals for bar chart and table
   const totalBudget  = cats.reduce((s,c) => s + c.budget, 0);
   const totalActual  = cats.reduce((s,c) => s + Math.abs(c.actual), 0);
   const totalVariance = totalBudget - totalActual;
 
-  // Horizontal bar — append Total row with dark accent color
-  makeHorizBar(
-    'chart-budget-bar',
+  // Horizontal bar — always show budget vs actual
+  makeHorizBar('chart-budget-bar',
     [...cats.map(c=>c.name), 'TOTAL'],
     [...cats.map(c=>c.budget), totalBudget],
     [...cats.map(c=>Math.abs(c.actual)), totalActual],
@@ -924,27 +995,29 @@ function renderSpending(data, selectedMonth) {
 
   renderCategoryTrend(data, null);
 
-  // Table
+  // Table — always show full Budget/Actual/Variance/% columns
+  const thead = document.getElementById('spend-table-head');
   const tbody = document.querySelector('#spend-table tbody');
+  thead.innerHTML = '<tr><th>Category</th><th class="num">Budget</th><th class="num">Actual</th><th class="num">Variance</th><th class="num">% of Budget</th></tr>';
   tbody.innerHTML = cats.map(c => {
     const actual = Math.abs(c.actual);
     const v = c.variance;
     const pct = c.budget ? (actual / c.budget * 100).toFixed(0) : '–';
     return `<tr>
       <td><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${catColor(c.name)};margin-right:8px;"></span>${c.name}</td>
-      <td class="num">${fmt$(c.budget)}</td>
+      <td class="num">${c.budget ? fmt$(c.budget) : '–'}</td>
       <td class="num">${fmt$(actual)}</td>
-      <td class="num ${v >= 0 ? 'pos' : 'neg'}">${fmtSign$(v)}</td>
+      <td class="num ${v >= 0 ? 'pos' : 'neg'}">${c.budget ? fmtSign$(v) : '–'}</td>
       <td class="num">${pct}%</td>
     </tr>`;
   }).join('') + `
-    <tr style="font-weight:700;border-top:2px solid var(--border);background:var(--surface2);">
-      <td><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#1c1917;margin-right:8px;"></span>Total</td>
-      <td class="num">${fmt$(totalBudget)}</td>
-      <td class="num">${fmt$(totalActual)}</td>
-      <td class="num ${totalVariance >= 0 ? 'pos' : 'neg'}">${fmtSign$(totalVariance)}</td>
-      <td class="num">${totalBudget ? (totalActual/totalBudget*100).toFixed(0) : '–'}%</td>
-    </tr>`;
+  <tr style="font-weight:700;border-top:2px solid var(--border);background:var(--surface2);">
+    <td><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#1c1917;margin-right:8px;"></span>Total</td>
+    <td class="num">${totalBudget ? fmt$(totalBudget) : '–'}</td>
+    <td class="num">${fmt$(totalActual)}</td>
+    <td class="num ${totalVariance >= 0 ? 'pos' : 'neg'}">${totalBudget ? fmtSign$(totalVariance) : '–'}</td>
+    <td class="num">${totalBudget ? (totalActual/totalBudget*100).toFixed(0)+'%' : '–'}</td>
+  </tr>`;
 }
 
 function renderCategoryTrend(data, category) {
@@ -1005,17 +1078,32 @@ function renderCategoryTrend(data, category) {
   if (!ctx || years.length === 0) return;
   const yoyPct = values.map((v,i) => i === 0 ? null : values[i-1] ? +((v - values[i-1]) / values[i-1] * 100).toFixed(1) : null);
 
+  // Budget comparison for bar colors: green = under budget, red = over budget
+  const histBudgets = data.summary?.histBudgets || {};
+  const budgetForYear = yr => {
+    const map = histBudgets[yr] || {};
+    if (activeCat === TOTAL_KEY) {
+      return Object.values(map).reduce((s, c) => s + (c.budget || 0), 0);
+    }
+    return (map[activeCat] || {}).budget || 0;
+  };
+
   charts['chart-cat-trend'] = new Chart(ctx.getContext('2d'), {
     type: 'bar',
     data: {
       labels: years.map(String),
       datasets: [
         {
-          label: activeCat,
+          label: activeCat === TOTAL_KEY ? 'Total Spending' : activeCat,
           data: values,
-          backgroundColor: values.map((v,i) => {
-            const ref = i === 0 ? values[1] : values[i-1];
-            return v > ref ? 'rgba(220,38,38,0.75)' : 'rgba(22,163,74,0.75)';
+          backgroundColor: years.map((yr, i) => {
+            const budget = budgetForYear(yr);
+            if (!budget) {
+              // No budget data — fall back to YoY direction
+              const ref = i === 0 ? values[1] : values[i - 1];
+              return values[i] > ref ? 'rgba(220,38,38,0.75)' : 'rgba(22,163,74,0.75)';
+            }
+            return values[i] > budget ? 'rgba(220,38,38,0.75)' : 'rgba(22,163,74,0.75)';
           }),
           borderRadius: 6
         },
