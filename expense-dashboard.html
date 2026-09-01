@@ -390,24 +390,71 @@ function parseMonthlySheet(rows) {
   const categories = [];
   const invested = {}, gains = {};
   let investState = 'none';
+  
+  // Dynamically find column indices by searching header rows
+  let catNameCol = -1, budgetCol = -1, actualCol = -1, varianceCol = -1;
+  let labelCol = -1, valueCol = -1;
+  
+  // Search first 3 rows for headers
+  for (let i = 0; i < Math.min(3, rows.length); i++) {
+    const row = rows[i] || [];
+    for (let c = 0; c < row.length; c++) {
+      const cell = String(row[c] || '').trim().toLowerCase();
+      if (cell === 'budget to actual') budgetCol = c; // Start of budget section
+      if (cell === 'activity') labelCol = c; // Investment activity column
+    }
+  }
+  
+  // If we found budget column, the structure is: Name at +1, Budget at +2, Actual at +3, Variance at +4 from "Budget to Actual"
+  if (budgetCol >= 0) {
+    catNameCol = budgetCol + 1;
+    budgetCol = budgetCol + 2;
+    actualCol = budgetCol + 1;
+    varianceCol = budgetCol + 2;
+  } else {
+    // Fallback to old hardcoded indices for pre-August sheets
+    catNameCol = 24;
+    budgetCol = 25;
+    actualCol = 26;
+    varianceCol = 27;
+  }
+  
+  // If no label column found, assume old position (cols 29-30)
+  if (labelCol < 0) {
+    labelCol = 29;
+    valueCol = 30;
+  } else {
+    valueCol = labelCol + 1;
+  }
 
   for (let i = 2; i < rows.length; i++) {
     const row = rows[i] || [];
-    // Budget vs Actual table (cols 24–27)
-    const catName = row[24];
-    if (isStr(catName) && catName !== 'Total' && catName !== 'Category') {
-      categories.push({ name: catName.trim(), budget: num(row[25]), actual: num(row[26]), variance: num(row[27]) });
+    
+    // Budget vs Actual table
+    if (catNameCol >= 0 && catNameCol < row.length) {
+      const catName = row[catNameCol];
+      if (isStr(catName) && catName !== 'Total' && catName !== 'Category') {
+        categories.push({ 
+          name: catName.trim(), 
+          budget: num(budgetCol >= 0 ? row[budgetCol] : 0), 
+          actual: num(actualCol >= 0 ? row[actualCol] : 0), 
+          variance: num(varianceCol >= 0 ? row[varianceCol] : 0) 
+        });
+      }
     }
-    // Investment activity (cols 29–30)
-    const label = row[29];
-    const val = num(row[30]);
-    if (isStr(label)) {
-      const l = label.trim();
-      if (l === 'Invested Amount for month') { investState = 'invest'; }
-      else if (l === 'Gain/Loss in Investment') { investState = 'gains'; }
-      else if (l === 'Total') { investState = 'none'; }
-      else if (investState === 'invest' && val !== 0) { invested[l] = (invested[l] || 0) + val; }
-      else if (investState === 'gains' && val !== 0) { gains[l] = (gains[l] || 0) + val; }
+    
+    // Investment activity
+    if (labelCol >= 0 && labelCol < row.length) {
+      const label = row[labelCol];
+      const val = num(valueCol >= 0 ? row[valueCol] : 0);
+      if (isStr(label)) {
+        const l = label.trim();
+        if (l === 'Invested Amount for month') { investState = 'invest'; }
+        else if (l === 'Gain/Loss in Investment') { investState = 'gains'; }
+        else if (l === 'Total') { investState = 'none'; }
+        else if (investState === 'invest' && val !== 0) { invested[l] = (invested[l] || 0) + val; }
+        else if (investState === 'gains' && val !== 0) { gains[l] = (gains[l] || 0) + val; }
+      }
     }
   }
   return { categories, invested, gains };
