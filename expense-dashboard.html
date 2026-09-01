@@ -391,70 +391,56 @@ function parseMonthlySheet(rows) {
   const invested = {}, gains = {};
   let investState = 'none';
   
-  // Dynamically find column indices by searching header rows
-  let catNameCol = -1, budgetCol = -1, actualCol = -1, varianceCol = -1;
-  let labelCol = -1, valueCol = -1;
-  
-  // Search first 3 rows for headers
-  for (let i = 0; i < Math.min(3, rows.length); i++) {
+  // Locate the two side tables by their header text, so the sheet can gain or
+  // lose columns without breaking the parse.
+  // Layout (constant relative to the anchor):
+  //   [anchor] Category | Budget | Actual | Variance
+  //   [anchor] Activity -> label in same col, value in next col
+  let catNameCol = -1, labelCol = -1;
+
+  for (let i = 0; i < Math.min(4, rows.length); i++) {
     const row = rows[i] || [];
     for (let c = 0; c < row.length; c++) {
-      const cell = String(row[c] || '').trim().toLowerCase();
-      if (cell === 'budget to actual') budgetCol = c; // Start of budget section
-      if (cell === 'activity') labelCol = c; // Investment activity column
+      const cell = String(row[c] == null ? '' : row[c]).trim().toLowerCase();
+      if (catNameCol < 0 && (cell === 'category' || cell === 'budget to actual')) catNameCol = c;
+      if (labelCol < 0 && (cell === 'activity' || cell === 'investment activity')) labelCol = c;
     }
   }
-  
-  // If we found budget column, the structure is: Name at +1, Budget at +2, Actual at +3, Variance at +4 from "Budget to Actual"
-  if (budgetCol >= 0) {
-    catNameCol = budgetCol + 1;
-    budgetCol = budgetCol + 2;
-    actualCol = budgetCol + 1;
-    varianceCol = budgetCol + 2;
-  } else {
-    // Fallback to old hardcoded indices for pre-August sheets
-    catNameCol = 24;
-    budgetCol = 25;
-    actualCol = 26;
-    varianceCol = 27;
-  }
-  
-  // If no label column found, assume old position (cols 29-30)
-  if (labelCol < 0) {
-    labelCol = 29;
-    valueCol = 30;
-  } else {
-    valueCol = labelCol + 1;
-  }
+
+  // Fallback to the original fixed positions if the headers are missing
+  if (catNameCol < 0) catNameCol = 24;
+  if (labelCol < 0) labelCol = 29;
+
+  const budgetCol   = catNameCol + 1;
+  const actualCol   = catNameCol + 2;
+  const varianceCol = catNameCol + 3;
+  const valueCol    = labelCol + 1;
 
   for (let i = 2; i < rows.length; i++) {
     const row = rows[i] || [];
     
     // Budget vs Actual table
-    if (catNameCol >= 0 && catNameCol < row.length) {
-      const catName = row[catNameCol];
-      if (isStr(catName) && catName !== 'Total' && catName !== 'Category') {
-        categories.push({ 
-          name: catName.trim(), 
-          budget: num(budgetCol >= 0 ? row[budgetCol] : 0), 
-          actual: num(actualCol >= 0 ? row[actualCol] : 0), 
-          variance: num(varianceCol >= 0 ? row[varianceCol] : 0) 
-        });
-      }
+    const catName = row[catNameCol];
+    if (isStr(catName) && catName.trim() !== 'Total' && catName.trim() !== 'Category' && catName.trim() !== 'Budget to Actual') {
+      categories.push({
+        name: catName.trim(),
+        budget: num(row[budgetCol]),
+        actual: num(row[actualCol]),
+        variance: num(row[varianceCol])
+      });
     }
-    
+
     // Investment activity
-    if (labelCol >= 0 && labelCol < row.length) {
-      const label = row[labelCol];
-      const val = num(valueCol >= 0 ? row[valueCol] : 0);
-      if (isStr(label)) {
-        const l = label.trim();
-        if (l === 'Invested Amount for month') { investState = 'invest'; }
-        else if (l === 'Gain/Loss in Investment') { investState = 'gains'; }
-        else if (l === 'Total') { investState = 'none'; }
-        else if (investState === 'invest' && val !== 0) { invested[l] = (invested[l] || 0) + val; }
-        else if (investState === 'gains' && val !== 0) { gains[l] = (gains[l] || 0) + val; }
-      }
+    const label = row[labelCol];
+    const val = num(row[valueCol]);
+    if (isStr(label)) {
+      const l = label.trim();
+      if (l === 'Invested Amount for month') { investState = 'invest'; }
+      else if (l === 'Gain/Loss in Investment') { investState = 'gains'; }
+      else if (l === 'Total') { investState = 'none'; }
+      else if (l === 'Activity' || l === 'Investment Activity') { /* header row */ }
+      else if (investState === 'invest' && val !== 0) { invested[l] = (invested[l] || 0) + val; }
+      else if (investState === 'gains' && val !== 0) { gains[l] = (gains[l] || 0) + val; }
     }
   }
   return { categories, invested, gains };
@@ -515,24 +501,33 @@ function parseSummarySheet(rows) {
     monthly.push({ month: mo, label: MONTH_NAMES[mo], net, budget, actual: Math.abs(actual), invEarning });
   }
 
-  // Investment accounts: same row range, different columns
-  for (let i = dataStart; i < Math.min(dataStart + 10, rows.length); i++) {
+  // Investment accounts: scan down the name column until the block ends
+  let blanks = 0;
+  for (let i = dataStart; i < Math.min(dataStart + 60, rows.length); i++) {
     const row = rows[i] || [];
     const name = row[colInvName];
-    if (!isStr(name)) continue;
+    if (!isStr(name) || !name.trim()) {
+      if (++blanks >= 2) break;
+      continue;
+    }
+    blanks = 0;
     const nm = name.trim();
-    if (!nm) continue;
+    const isTotal = nm.toUpperCase() === 'TOTAL';
     investments.push({
       name: nm,
       cost: num(row[colInvCost]), added: num(row[colInvAdded]),
       gain: num(row[colInvGain]), fmv: num(row[colInvFMV]),
       pctInc: num(row[colInvPct]), pctGained: num(row[colInvPct + 1]),
-      isTotal: nm === 'TOTAL'
+      isTotal
     });
+    if (isTotal) break;
   }
 
-  // Portfolio total FMV directly from cell AB11 (Excel row 11 = 0-based row 10, col AB = 0-based col 27)
-  const portfolioFMV = num((rows[10] || [])[27]);
+  // Portfolio total FMV comes from whichever row is the TOTAL
+  const totalAcct = investments.find(a => a.isTotal);
+  const portfolioFMV = totalAcct
+    ? totalAcct.fmv
+    : investments.reduce((s, a) => s + a.fmv, 0);
 
   return { monthly, investments, portfolioFMV };
 }
@@ -636,30 +631,53 @@ function parseWorkbook(wb) {
   const graphRows = wb.Sheets['Graph'] ? XLSX.utils.sheet_to_json(wb.Sheets['Graph'], { header: 1, defval: null }) : [];
   const summary = parseSummarySheet(summaryRows);
 
-  // Parse investment table directly from X3:AE11 using exact cell addresses
+  // Parse the investment table in column X onward. Accounts start on Excel row 4
+  // (row 3 is the header) and run until the TOTAL row, so adding or removing an
+  // account shifts the total without breaking the parse.
   if (summarySheet) {
     const cell = addr => summarySheet[addr] ? num(summarySheet[addr].v) : 0;
     const cellStr = addr => summarySheet[addr] ? String(summarySheet[addr].v).trim() : '';
-    const ACCT_ROWS = ['4','5','6','7','8','9','10'];
-    summary.investments = ACCT_ROWS
-      .map(r => ({
-        name:      cellStr('X' + r),
-        cost:      cell('Y' + r),
-        added:     cell('Z' + r),
-        gain:      cell('AA' + r),
-        fmv:       cell('AB' + r),
-        pctInc:    cell('AC' + r),
-        pctGained: cell('AD' + r),
-        isTotal:   false
-      }))
-      .filter(a => a.name);
-    summary.investments.push({
-      name: 'TOTAL', isTotal: true,
-      cost:      cell('Y11'), added:     cell('Z11'),
-      gain:      cell('AA11'), fmv:      cell('AB11'),
-      pctInc:    cell('AC11'), pctGained: cell('AD11')
+    const readAcct = (r, isTotal) => ({
+      name:      isTotal ? 'TOTAL' : cellStr('X' + r),
+      cost:      cell('Y' + r),
+      added:     cell('Z' + r),
+      gain:      cell('AA' + r),
+      fmv:       cell('AB' + r),
+      pctInc:    cell('AC' + r),
+      pctGained: cell('AD' + r),
+      isTotal:   !!isTotal
     });
-    summary.portfolioFMV = cell('AB11');
+
+    const accounts = [];
+    let totalRow = null;
+    let blanks = 0;
+    for (let r = 4; r <= 60; r++) {
+      const name = cellStr('X' + r);
+      if (!name) {
+        // Tolerate a stray blank row inside the block, but stop after two
+        if (++blanks >= 2) break;
+        continue;
+      }
+      blanks = 0;
+      if (name.toUpperCase() === 'TOTAL') { totalRow = r; break; }
+      accounts.push(readAcct(r, false));
+    }
+
+    summary.investments = accounts;
+    if (totalRow !== null) {
+      summary.investments.push(readAcct(totalRow, true));
+      summary.portfolioFMV = cell('AB' + totalRow);
+    } else if (accounts.length) {
+      // No TOTAL row found — derive it by summing the accounts
+      const sum = k => accounts.reduce((s, a) => s + a[k], 0);
+      const cost = sum('cost'), added = sum('added'), gain = sum('gain'), fmv = sum('fmv');
+      summary.investments.push({
+        name: 'TOTAL', isTotal: true, cost, added, gain, fmv,
+        pctInc:    cost ? (fmv - cost) / cost : 0,
+        pctGained: cost ? gain / cost : 0
+      });
+      summary.portfolioFMV = fmv;
+    }
 
     // Parse historical yearly budgets directly from col D–G starting row 19
     // Col D = category name, Col E = budget, Col F = actual, Col G = variance
